@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* 전역 기본 */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  color: #111827;
+  background: #ffffff;
+}
+
+/* 스크롤바(선택) */
+* {
+  scrollbar-width: thin;
+}
