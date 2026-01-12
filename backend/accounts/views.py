@@ -2,8 +2,10 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth.models import User
-from .models import Profile
-from .serializers import UserSerializer, ProfileSerializer
+from django.shortcuts import get_object_or_404
+from policies.models import Policy
+from .serializers import UserSerializer, ProfileSerializer, ScrapSerializer
+from .models import Profile, Scrap
 
 
 class SignupView(generics.CreateAPIView):
@@ -42,3 +44,34 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     
     def get_object(self):
         return self.request.user.profile
+
+class ScrapListView(generics.ListAPIView):
+    """내 스크랩 목록"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = ScrapSerializer
+    
+    def get_queryset(self):
+        return Scrap.objects.filter(user=self.request.user)
+
+
+class ScrapDetailView(generics.GenericAPIView):
+    """스크랩 추가/삭제"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, plcy_no):
+        """스크랩 추가"""
+        policy = get_object_or_404(Policy, plcy_no=plcy_no)
+        scrap, created = Scrap.objects.get_or_create(user=request.user, policy=policy)
+        
+        if created:
+            return Response({"message": "스크랩되었습니다."}, status=status.HTTP_201_CREATED)
+        return Response({"message": "이미 스크랩된 정책입니다."}, status=status.HTTP_200_OK)
+    
+    def delete(self, request, plcy_no):
+        """스크랩 삭제"""
+        policy = get_object_or_404(Policy, plcy_no=plcy_no)
+        deleted, _ = Scrap.objects.filter(user=request.user, policy=policy).delete()
+        
+        if deleted:
+            return Response({"message": "스크랩이 취소되었습니다."}, status=status.HTTP_200_OK)
+        return Response({"message": "스크랩되지 않은 정책입니다."}, status=status.HTTP_404_NOT_FOUND)

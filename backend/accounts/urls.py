@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
-from .views import SignupView, ProfileView
+from .views import SignupView, ProfileView, ScrapListView, ScrapDetailView
 
 
 urlpatterns = [
@@ -14,4 +14,8 @@ urlpatterns = [
     
     # 프로필
     path('profile/', ProfileView.as_view(), name='profile'),
+    
+    # 스크랩
+    path('scraps/', ScrapListView.as_view(), name='scrap-list'),
+    path('scraps/<str:plcy_no>/', ScrapDetailView.as_view(), name='scrap-detail'),
 ]

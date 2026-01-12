@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
-from .models import Profile
+from policies.serializers import PolicyListSerializer
+from .models import Profile, Scrap
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -55,3 +56,10 @@ class ProfileSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         read_only_fields = ['username', 'email', 'age', 'created_at', 'updated_at']
+
+class ScrapSerializer(serializers.ModelSerializer):
+    policy = PolicyListSerializer(read_only=True)
+    
+    class Meta:
+        model = Scrap
+        fields = ['id', 'policy', 'created_at']

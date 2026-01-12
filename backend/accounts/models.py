@@ -107,3 +107,17 @@ def create_user_profile(sender, instance, created, **kwargs):
 def save_user_profile(sender, instance, **kwargs):
     if hasattr(instance, 'profile'):
         instance.profile.save()
+
+class Scrap(models.Model):
+    """사용자의 관심 정책 스크랩"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='scraps')
+    policy = models.ForeignKey('policies.Policy', on_delete=models.CASCADE, related_name='scraps')
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'scrap'
+        unique_together = ['user', 'policy']
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.policy.plcy_nm}"
