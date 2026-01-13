@@ -45,17 +45,48 @@ class ProfileSerializer(serializers.ModelSerializer):
         queryset=Profile.interests.field.related_model.objects.all(),
         required=False
     )
+    interests_display = serializers.SerializerMethodField()
     
     class Meta:
         model = Profile
         fields = [
             'username', 'email',
-            'birth_year', 'district', 'income_level',
+            'birth_year', 'district', 'income_level', 'income_amount',
             'job_status', 'education_status', 'marriage_status',
-            'interests', 'age',
+            'housing_type', 'household_size',
+            'has_children', 'children_ages',
+            'special_conditions', 'needs',
+            'interests', 'interests_display',
+            'age',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['username', 'email', 'age', 'created_at', 'updated_at']
+    
+    def get_interests_display(self, obj):
+        return list(obj.interests.values_list('name', flat=True))
+    
+    def validate_children_ages(self, value):
+        """자녀 나이 유효성 검사"""
+        if value:
+            if not isinstance(value, list):
+                raise serializers.ValidationError("자녀 나이는 리스트 형태여야 합니다.")
+            for age in value:
+                if not isinstance(age, int) or age < 0 or age > 30:
+                    raise serializers.ValidationError("자녀 나이는 0-30 사이의 정수여야 합니다.")
+        return value
+    
+    def validate_special_conditions(self, value):
+        """특수조건 유효성 검사"""
+        valid_conditions = ['신혼', '한부모', '장애', '다자녀', '저소득', '차상위', '기초수급']
+        if value:
+            if not isinstance(value, list):
+                raise serializers.ValidationError("특수조건은 리스트 형태여야 합니다.")
+            for cond in value:
+                if cond not in valid_conditions:
+                    raise serializers.ValidationError(
+                        f"유효하지 않은 특수조건: {cond}. 가능한 값: {valid_conditions}"
+                    )
+        return value
 
 class ScrapSerializer(serializers.ModelSerializer):
     policy = PolicyListSerializer(read_only=True)

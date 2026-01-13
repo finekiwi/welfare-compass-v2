@@ -39,6 +39,17 @@ class Profile(models.Model):
         ('unknown', '모름'),
     ]
     
+    # 주거형태 선택지
+    HOUSING_TYPE_CHOICES = [
+        ('jeonse', '전세'),
+        ('monthly', '월세'),
+        ('owned', '자가'),
+        ('gosiwon', '고시원'),
+        ('parents', '부모님집'),
+        ('public', '공공임대'),
+        ('other', '기타'),
+    ]
+    
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     
     # 기본 정보
@@ -51,6 +62,11 @@ class Profile(models.Model):
         choices=INCOME_LEVEL_CHOICES,
         blank=True,
         verbose_name='소득수준'
+    )
+    income_amount = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='월 소득(만원)',
+        help_text='월 평균 소득 (만원 단위)'
     )
     job_status = models.CharField(
         max_length=20, 
@@ -78,6 +94,48 @@ class Profile(models.Model):
     # 관심 분야
     interests = models.ManyToManyField(Category, blank=True, related_name='interested_profiles')
     
+    # ===== 추가 필드들 (matching.py 호환) =====
+    
+    # 주거 정보
+    housing_type = models.CharField(
+        max_length=20,
+        choices=HOUSING_TYPE_CHOICES,
+        blank=True,
+        verbose_name='주거형태'
+    )
+    
+    # 가구 정보
+    household_size = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='가구원 수',
+        help_text='본인 포함 가구원 수'
+    )
+    
+    # 자녀 정보
+    has_children = models.BooleanField(
+        default=False,
+        verbose_name='자녀 유무'
+    )
+    children_ages = models.JSONField(
+        default=list, blank=True,
+        verbose_name='자녀 나이',
+        help_text='자녀 나이 리스트 (예: [5, 8])'
+    )
+    
+    # 특수 조건 (신혼, 한부모, 장애 등)
+    special_conditions = models.JSONField(
+        default=list, blank=True,
+        verbose_name='특수조건',
+        help_text='해당하는 특수조건 리스트 (예: ["신혼", "장애"])'
+    )
+    
+    # 필요 분야
+    needs = models.JSONField(
+        default=list, blank=True,
+        verbose_name='필요분야',
+        help_text='필요한 지원 분야 리스트 (예: ["주거", "일자리"])'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -94,6 +152,41 @@ class Profile(models.Model):
             from datetime import date
             return date.today().year - self.birth_year
         return None
+    
+    def to_matching_dict(self):
+        """matching.py 호환 딕셔너리 변환"""
+        return {
+            'age': self.age,
+            'residence': self.district,
+            'employment_status': self._convert_job_status(),
+            'housing_type': self._convert_housing_type(),
+            'income': self.income_amount,
+            'household_size': self.household_size,
+            'has_children': self.has_children,
+            'children_ages': self.children_ages or [],
+            'special_conditions': self.special_conditions or [],
+            'needs': self.needs or [],
+        }
+    
+    def _convert_job_status(self):
+        """job_status를 matching.py 형식으로 변환"""
+        mapping = {
+            'employed': '재직',
+            'job_seeking': '구직중',
+            'unemployed': '무직',
+            'student': '학생',
+        }
+        return mapping.get(self.job_status, '')
+    
+    def _convert_housing_type(self):
+        """housing_type을 matching.py 형식으로 변환"""
+        mapping = {
+            'jeonse': '전세',
+            'monthly': '월세',
+            'gosiwon': '고시원',
+            'public': '임대',
+        }
+        return mapping.get(self.housing_type, '')
 
 
 # User 생성 시 자동으로 Profile 생성
