@@ -1,9 +1,9 @@
 // features/policy/YouthPolicySection.tsx
-import { fetchYouthPolicies } from "./policy.api";
 import { PolicyCard } from "./PolicyCard";
+import { fetchYouthPolicyCards } from "./policy.api";
 
 export async function YouthPolicySection() {
-  const policies = await fetchYouthPolicies();
+  const policies = await fetchYouthPolicyCards(6); // ✅ PolicyCardItem[]
 
   return (
     <section className="pb-10">

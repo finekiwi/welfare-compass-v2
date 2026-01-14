@@ -49,7 +49,7 @@ export function ChatInput() {
       <button
         type="button"
         onClick={send}
-        className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white"
+        className="rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white"
       >
         전송
       </button>

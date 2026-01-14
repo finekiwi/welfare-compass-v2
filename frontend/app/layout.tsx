@@ -8,6 +8,9 @@ import { ChatbotModalHost } from "@/features/chatbot/ChatbotModalHost";
 export const metadata: Metadata = {
     title: "복지나침반",
     description: "서울 청년 복지정책 추천 서비스",
+    icons: {
+        icon: "/favicon.ico"
+    }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

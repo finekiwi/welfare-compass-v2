@@ -1,21 +1,67 @@
 // features/policy/policy.api.ts
-import type { Policy } from "./policy.types";
+import { MOCK_POLICIES } from "./policy.mock";
+import type { Policy, PolicyCategory, PolicyCardItem } from "./policy.types";
 
-// ✅ 백엔드 준비 전에는 mock으로 UI부터 완성하는 게 가장 빠릅니다.
-// 나중에 Axios로 교체할 때 함수 시그니처만 유지하면, UI는 그대로 재사용 가능.
-export async function fetchPriorityPolicies(): Promise<Policy[]> {
-  return [
-    { id: "1", title: "서울시 청년월세 지원", tag: "청년", imageVariant: "family" },
-    { id: "2", title: "구직활동 지원금", tag: "일자리", imageVariant: "study" },
-    { id: "3", title: "전세자금 대출 이자 지원", tag: "주거", imageVariant: "care" },
-    { id: "4", title: "전세자금 대출 이자 지원", tag: "주거", imageVariant: "care" },
-  ];
+export type PolicySearchParams = {
+  q?: string;
+  category?: PolicyCategory | "all";
+  region?: string;
+};
+
+// ✅ 카드용으로 축약하는 변환기(실무에서 흔함: DTO -> ViewModel)
+function toCardItem(p: Policy): PolicyCardItem {
+  return {
+    id: p.id,
+    title: p.title,
+    summary: p.summary,
+    region: p.region,
+  };
 }
 
-export async function fetchYouthPolicies(): Promise<Policy[]> {
-  return [
-    { id: "11", title: "서울시 청년월세 지원", tag: "청년", imageVariant: "family" },
-    { id: "12", title: "구직활동 지원금", tag: "일자리", imageVariant: "study" },
-    { id: "13", title: "전세자금 대출 이자 지원", tag: "주거", imageVariant: "care" },
-  ];
+/**
+ * ✅ 검색 페이지용 (필터링 때문에 Policy 전체 유지 가능)
+ */
+export async function fetchPolicies(params?: PolicySearchParams): Promise<Policy[]> {
+  const q = (params?.q ?? "").trim().toLowerCase();
+  const category = params?.category ?? "all";
+  const region = (params?.region ?? "").trim();
+
+  let list = [...MOCK_POLICIES];
+
+  if (category !== "all") list = list.filter((p) => p.category === category);
+  if (region) list = list.filter((p) => p.region.includes(region));
+
+  if (q) {
+    list = list.filter((p) => {
+      const hay = `${p.title} ${p.summary} ${p.target} ${p.content}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  await new Promise((r) => setTimeout(r, 150));
+  return list;
+}
+
+/**
+ * ✅ 상세 페이지용
+ */
+export async function fetchPolicyById(id: string): Promise<Policy | null> {
+  await new Promise((r) => setTimeout(r, 80));
+  return MOCK_POLICIES.find((p) => p.id === id) ?? null;
+}
+
+/**
+ * ✅ 메인: 우선순위(카드용으로 반환)
+ */
+export async function fetchPriorityPolicyCards(limit = 8): Promise<PolicyCardItem[]> {
+  const list = MOCK_POLICIES.filter((p) => p.isPriority).slice(0, limit);
+  return list.map(toCardItem);
+}
+
+/**
+ * ✅ 메인: 청년지원(카드용으로 반환)
+ */
+export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]> {
+  const list = MOCK_POLICIES.filter((p) => p.isYouth).slice(0, limit);
+  return list.map(toCardItem);
 }
