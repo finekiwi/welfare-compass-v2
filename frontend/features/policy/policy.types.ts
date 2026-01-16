@@ -9,25 +9,60 @@ export type PolicyCategory =
   | "emotional-wellbeing"
   | "care-protection";
 
+// 목록/카드용 간략 타입
 export type Policy = {
-  id: string;                // ✅ 상세 라우팅에 쓰일 고유 id (Django pk로 바꿔도 됨)
-  title: string;             // 정책명
-  summary: string;           // 카드에 보일 짧은 설명
-  category: PolicyCategory;  // 카테고리 필터용
-  region: string;            // 예: "서울시"
-  target: string;            // 지원대상
-  period: string;            // 모집기간
-  criteria: string;          // 선정기준
-  content: string;           // 지원내용(상세)
+  id: string;
+  title: string;
+  summary: string;
+  category: PolicyCategory;
+  region: string;
+  target: string;
+  period: string;
+  criteria: string;
+  content: string;
+  isPriority?: boolean;
+  isYouth?: boolean;
+  aplyYmd?: string;
+  bizPrdBgngYmd?: string;
+  bizPrdEndYmd?: string;
+};
 
-  // ✅ 메인 섹션에서 쓸 메타(목업/추후 백엔드 필드로 대체 가능)
-  isPriority?: boolean; // 우선순위 노출용
-  isYouth?: boolean;    // 청년지원 섹션 노출용
+// ✅ 상세 페이지용 전체 필드 타입
+export type PolicyDetail = {
+  // 기본 정보
+  id: string;               // plcy_no
+  title: string;            // plcy_nm
+  description: string;      // plcy_expln_cn
+  supportContent: string;   // plcy_sprt_cn
 
-  // ✅ 달력용 임시 필드(나중에 Django에서 내려주면 그대로 교체)
-  aplyYmd?: string;          // "20260105 ~ 20260215"
-  bizPrdBgngYmd?: string;    // "20260220"
-  bizPrdEndYmd?: string;     // "20261231"
+  // 자격 요건
+  minAge: number | null;    // sprt_trgt_min_age
+  maxAge: number | null;    // sprt_trgt_max_age
+  hasAgeLimitYn: string;    // sprt_trgt_age_lmt_yn (Y/N)
+  incomeConditionCode: string; // earn_cnd_se_cd
+  minIncome: number | null; // earn_min_amt
+  maxIncome: number | null; // earn_max_amt
+  marriageStatusCode: string; // mrg_stts_cd
+  jobCode: string;          // job_cd
+  schoolCode: string;       // school_cd
+
+  // 신청 정보
+  applyStartDate: string | null;  // aply_start_dt
+  applyEndDate: string | null;    // aply_end_dt
+  applyMethod: string;      // plcy_aply_mthd_cn
+  applyUrl: string;         // aply_url_addr
+
+  // 사업 기간
+  bizStartDate: string | null;    // biz_prd_bgng_ymd
+  bizEndDate: string | null;      // biz_prd_end_ymd
+
+  // 지역/카테고리
+  region: string;           // district
+  categories: { id: number; name: string }[];
+
+  // 메타
+  createdAt: string | null; // frst_reg_dt
+  updatedAt: string | null; // last_mdfcn_dt
 };
 
 // ✅ 카드(UI)에 필요한 최소 필드만 뽑은 타입

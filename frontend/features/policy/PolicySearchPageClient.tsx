@@ -52,7 +52,7 @@ export function PolicySearchPageClient() {
         <div className="mx-auto w-full max-w-[1280px] px-4 py-8">
             {/* ✅ 상단 검색 바 (스크린샷 느낌: 버튼 + 셀렉트 + 인풋 + 검색버튼) */}
             <section className="mb-8">
-                <div className="mx-auto flex w-full max-w-[980px] items-center gap-2 rounded-xl border bg-white p-3">
+                <div className="flex w-full items-center gap-2 rounded-xl border bg-white p-3">
                     <button
                         type="button"
                         className="rounded-lg bg-gray-800 px-3 py-2 text-xs text-white"
@@ -108,14 +108,14 @@ export function PolicySearchPageClient() {
                     </button>
                 </div>
 
-                <div className="mx-auto mt-2 w-full max-w-[980px] text-right text-[11px] text-gray-500">
+                <div className="mt-2 w-full text-right text-[11px] text-gray-500">
                     {countText}
                 </div>
             </section>
 
             {/* ✅ 카드 리스트 */}
-            <section className="mx-auto w-full max-w-[980px]">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <section className="w-full">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                     {items.map((p) => (
                         <PolicyCard key={p.id} policy={p} />
                     ))}

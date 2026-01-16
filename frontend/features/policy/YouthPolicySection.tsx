@@ -3,7 +3,7 @@ import { PolicyCard } from "./PolicyCard";
 import { fetchYouthPolicyCards } from "./policy.api";
 
 export async function YouthPolicySection() {
-  const policies = await fetchYouthPolicyCards(6); // ✅ PolicyCardItem[]
+  const policies = await fetchYouthPolicyCards(4); // ✅ PolicyCardItem[]
 
   return (
     <section className="pb-10">

@@ -6,11 +6,12 @@ import { HOME_CATEGORIES } from "./home.types";
 
 export function CategoryMenu() {
   return (
-    <section className="mb-10">
+    <section className="mb-11">
       <div className="flex flex-wrap items-center justify-center gap-6">
         {HOME_CATEGORIES.map((c) => {
-          const ring = 60;                 // ✅ 링(원형 테두리) 고정 크기
+          const ring = 58;                 // ✅ 링(원형 테두리) 고정 크기
           const icon = c.iconSize ?? 64;    // ✅ 아이콘은 원하는 크기(48 초과 가능)
+
 
           return (
             <button
@@ -21,7 +22,7 @@ export function CategoryMenu() {
             >
               {/* ✅ 링 기준 좌표계(48 고정) */}
               <span
-                className="relative flex items-center justify-center text-gray-600 cursor-pointer"
+                className="relative flex items-center justify-center text-gray-500 cursor-pointer"
                 style={{ width: ring, height: ring }}
               >
                 {/* ✅ 1) 아이콘: 링과 무관하게 크게 (absolute로 가운데 정렬) */}

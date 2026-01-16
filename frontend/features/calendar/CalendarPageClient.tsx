@@ -1,11 +1,14 @@
 // features/calendar/CalendarPageClient.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { fetchCalendarEvents } from "./calendar.api";
-import { CalendarEvent, CalendarPeriodMode } from "./calendar.types";
-import { expandDateKeysInclusive, toDateKey } from "./calendar.utils";
+import { CalendarEvent, CalendarPeriodMode, WeekSegment, DayOverflow } from "./calendar.types";
+import { toDateKey } from "./calendar.utils";
+import { buildWeekSegments, assignAllLanes, calculateOverflow } from "./utils/segmentUtils";
+import { WeekOverlay } from "./components/WeekOverlay";
+import { EventModal } from "./components/EventModal";
 
 function startOfMonth(d: Date) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -23,13 +26,12 @@ function addMonths(d: Date, n: number) {
  */
 function buildMonthGrid(baseMonth: Date): Date[] {
     const first = startOfMonth(baseMonth);
-    const last = endOfMonth(baseMonth);
 
     const firstDow = first.getDay(); // 0=Sun
     const gridStart = new Date(first);
     gridStart.setDate(first.getDate() - firstDow);
 
-    // 6주(42칸) 고정: 대부분의 달력 UI가 안정적으로 보임
+    // 6주(42칸) 고정
     const days: Date[] = [];
     const cur = new Date(gridStart);
     for (let i = 0; i < 42; i++) {
@@ -37,8 +39,6 @@ function buildMonthGrid(baseMonth: Date): Date[] {
         cur.setDate(cur.getDate() + 1);
     }
 
-    // last는 실제 계산엔 필요 없지만, 참고용으로 남김
-    void last;
     return days;
 }
 
@@ -54,6 +54,12 @@ export function CalendarPageClient() {
     // ✅ 이벤트 데이터
     const [events, setEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(false);
+
+    // ✅ Hover 상태
+    const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
+
+    // ✅ 모달 상태
+    const [modalDateKey, setModalDateKey] = useState<string | null>(null);
 
     useEffect(() => {
         let alive = true;
@@ -75,29 +81,9 @@ export function CalendarPageClient() {
         };
     }, [mode, month]);
 
-    // ✅ 날짜(YYYY-MM-DD) -> 이벤트들 매핑
-    const eventsByDate = useMemo(() => {
-        const map = new Map<string, CalendarEvent[]>();
-
-        for (const ev of events) {
-            const keys = expandDateKeysInclusive(ev.start, ev.end);
-            for (const k of keys) {
-                const arr = map.get(k) ?? [];
-                arr.push(ev);
-                map.set(k, arr);
-            }
-        }
-
-        // 같은 날짜에 여러 이벤트가 있으면 제목 기준 정렬(원하면 바꿔도 됨)
-        for (const [k, arr] of map) {
-            arr.sort((a, b) => a.title.localeCompare(b.title, "ko"));
-            map.set(k, arr);
-        }
-
-        return map;
-    }, [events]);
-
+    // ✅ 달력 그리드
     const gridDays = useMemo(() => buildMonthGrid(month), [month]);
+
     const monthLabel = useMemo(() => {
         const y = month.getFullYear();
         const m = String(month.getMonth() + 1).padStart(2, "0");
@@ -107,16 +93,61 @@ export function CalendarPageClient() {
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
 
+    // ✅ A안: 주 단위 Segment 계산
+    const weekSegments = useMemo(() => {
+        const segments = buildWeekSegments(events, gridDays);
+        return assignAllLanes(segments);
+    }, [events, gridDays]);
+
+    // ✅ Overflow 계산
+    const overflowMap = useMemo(() => {
+        return calculateOverflow(weekSegments, gridDays);
+    }, [weekSegments, gridDays]);
+
+    // ✅ 이벤트 ID → 이벤트 맵
+    const eventMap = useMemo(() => {
+        const map = new Map<string, CalendarEvent>();
+        for (const ev of events) {
+            map.set(ev.id, ev);
+        }
+        return map;
+    }, [events]);
+
+    // ✅ 특정 날짜의 모든 이벤트 (모달용)
+    const getEventsForDate = useCallback((dateKey: string): CalendarEvent[] => {
+        const result: CalendarEvent[] = [];
+        for (const ev of events) {
+            const evStart = toDateKey(ev.start);
+            const evEnd = toDateKey(ev.end);
+            if (dateKey >= evStart && dateKey <= evEnd) {
+                result.push(ev);
+            }
+        }
+        return result;
+    }, [events]);
+
+    // ✅ 핸들러
+    const handleEventClick = useCallback((eventId: string) => {
+        router.push(`/policy/${eventId}`);
+    }, [router]);
+
+    const handleOverflowClick = useCallback((dateKey: string) => {
+        setModalDateKey(dateKey);
+    }, []);
+
+    const handleCloseModal = useCallback(() => {
+        setModalDateKey(null);
+    }, []);
+
     return (
         <div className="mx-auto w-full max-w-[1280px] px-4 py-8">
-            {/* ✅ 상단 필터 바*/}
+            {/* ✅ 상단 필터 바 */}
             <section className="mb-6">
                 <div className="flex items-center gap-2 rounded-xl border bg-white p-3">
                     <input
                         className="h-9 flex-1 rounded-lg border px-3 text-sm outline-none"
-                        placeholder="정책명, 키워드로 검색하세요. (UI 목업)"
+                        placeholder="정책명, 키워드로 검색하세요."
                         onKeyDown={(e) => {
-                            // TODO: 실제 검색 로직은 다음 단계에서
                             if (e.key === "Enter") console.log("search");
                         }}
                     />
@@ -169,7 +200,7 @@ export function CalendarPageClient() {
             </section>
 
             {/* ✅ 달력 본문 */}
-            <section className="rounded-xl border bg-white">
+            <section className="rounded-xl border bg-white overflow-hidden">
                 {/* 요일 헤더 */}
                 <div className="grid grid-cols-7 border-b text-center text-xs font-semibold text-gray-600">
                     {["SUN", "MON", "TUE", "WED", "THR", "FRI", "SAT"].map((w) => (
@@ -179,48 +210,64 @@ export function CalendarPageClient() {
                     ))}
                 </div>
 
-                {/* 날짜 그리드 */}
-                <div className="grid grid-cols-7">
-                    {gridDays.map((d) => {
-                        const inMonth = d >= monthStart && d <= monthEnd;
-                        const k = toDateKey(d);
-                        const dayEvents = eventsByDate.get(k) ?? [];
+                {/* 날짜 그리드 + 오버레이 컨테이너 */}
+                <div className="relative">
+                    {/* Layer 1: 날짜 그리드 */}
+                    <div className="grid grid-cols-7">
+                        {gridDays.map((d, idx) => {
+                            const inMonth = d >= monthStart && d <= monthEnd;
+                            const k = toDateKey(d);
+                            const isToday = toDateKey(new Date()) === k;
 
-                        return (
-                            <div
-                                key={k}
-                                className={`min-h-[120px] border-b border-r p-2 ${inMonth ? "bg-white" : "bg-gray-50"
-                                    }`}
-                            >
-                                <div className="mb-2 flex items-center justify-between">
-                                    <span className={`text-xs ${inMonth ? "text-gray-900" : "text-gray-400"}`}>
-                                        {d.getDate()}
-                                    </span>
-                                </div>
-
-                                {/* ✅ 이벤트 렌더 (너무 많으면 3개만 보여주고 +n) */}
-                                <div className="space-y-1">
-                                    {dayEvents.slice(0, 3).map((ev) => (
-                                        <button
-                                            key={`${ev.id}-${ev.mode}`}
-                                            type="button"
-                                            className="w-full truncate rounded bg-gray-100 px-2 py-1 text-left text-[11px] text-gray-800 hover:bg-gray-200"
-                                            onClick={() => router.push(`/policy/${ev.id}`)}
-                                            title={ev.title}
+                            return (
+                                <div
+                                    key={k}
+                                    className={`h-[145px] border-b border-r p-2 ${inMonth ? "bg-white" : "bg-gray-50"
+                                        }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span
+                                            className={`text-xs ${isToday
+                                                ? "bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                                                : inMonth
+                                                    ? "text-gray-900"
+                                                    : "text-gray-400"
+                                                }`}
                                         >
-                                            {ev.title}
-                                        </button>
-                                    ))}
-
-                                    {dayEvents.length > 3 && (
-                                        <div className="text-[11px] text-gray-500">+{dayEvents.length - 3} more</div>
-                                    )}
+                                            {d.getDate()}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                    </div>
+
+                    {/* Layer 2: 주 단위 오버레이 */}
+                    {weekSegments.map((segments, weekIndex) => (
+                        <WeekOverlay
+                            key={weekIndex}
+                            weekIndex={weekIndex}
+                            segments={segments}
+                            overflowMap={overflowMap}
+                            gridDays={gridDays}
+                            hoveredEventId={hoveredEventId}
+                            onHover={setHoveredEventId}
+                            onEventClick={handleEventClick}
+                            onOverflowClick={handleOverflowClick}
+                        />
+                    ))}
                 </div>
             </section>
+
+            {/* ✅ Layer 3: 모달 */}
+            {modalDateKey && (
+                <EventModal
+                    date={modalDateKey}
+                    events={getEventsForDate(modalDateKey)}
+                    onClose={handleCloseModal}
+                    onEventClick={handleEventClick}
+                />
+            )}
         </div>
     );
 }

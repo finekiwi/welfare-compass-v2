@@ -6,50 +6,35 @@ import { useChatbotStore } from "@/stores/chatbot.store";
 
 export function ChatInput() {
   const [text, setText] = useState("");
-  const addMessage = useChatbotStore((s) => s.addMessage);
+  const sendMessage = useChatbotStore((s) => s.sendMessage);
+  const isLoading = useChatbotStore((s) => s.isLoading);
 
   const send = () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || isLoading) return;
 
-    // ✅ 1) 사용자 메시지 추가
-    addMessage({
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmed,
-      createdAt: Date.now(),
-    });
-
+    // ✅ 1) 스토어 액션 호출 (비동기)
+    sendMessage(trimmed);
     setText("");
-
-    // ✅ 2) 지금은 백엔드 연결 전이므로 "임시 응답"을 추가
-    // 나중에 SSE 붙일 때 이 부분만 교체하면 UI는 그대로 유지됩니다.
-    setTimeout(() => {
-      addMessage({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          "좋아요. 거주지(구), 나이, 취업 상태, 소득 수준 중 아는 것부터 알려주시면 추천 정확도가 올라가요.",
-        createdAt: Date.now(),
-      });
-    }, 400);
   };
 
   return (
     <div className="flex items-center gap-2">
       <input
-        className="flex-1 rounded-xl border px-4 py-3 text-sm outline-none"
-        placeholder="궁금한 복지 정책을 입력해보세요..."
+        className="flex-1 rounded-xl border px-4 py-3 text-sm outline-none disabled:bg-gray-100"
+        placeholder={isLoading ? "답변을 기다리는 중..." : "궁금한 복지 정책을 입력해보세요..."}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") send();
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
         }}
+        disabled={isLoading}
       />
       <button
         type="button"
         onClick={send}
-        className="rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white"
+        className="rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white disabled:bg-gray-400"
+        disabled={isLoading}
       >
         전송
       </button>
