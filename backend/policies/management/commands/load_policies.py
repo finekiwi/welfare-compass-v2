@@ -61,6 +61,28 @@ class Command(BaseCommand):
             except:
                 pass
             
+            # =================================================================
+            # [BRAIN4-19] 사업기간 파싱 추가
+            # =================================================================
+            #
+            # ❌ BEFORE: bizPrdBgngYmd, bizPrdEndYmd 필드 무시
+            # - 원본 JSON에 있는데 파싱 안 함 → 달력에서 사업기간 표시 불가
+            #
+            # ✅ AFTER: "YYYYMMDD" → date 변환하여 DB 저장
+            # - 프론트 달력의 mode='biz' 지원
+            # =================================================================
+            biz_prd_bgng_ymd = None
+            biz_prd_end_ymd = None
+            try:
+                bgng = item.get('bizPrdBgngYmd', '')
+                end = item.get('bizPrdEndYmd', '')
+                if bgng and len(bgng) == 8:
+                    biz_prd_bgng_ymd = datetime.strptime(bgng, '%Y%m%d').date()
+                if end and len(end) == 8:
+                    biz_prd_end_ymd = datetime.strptime(end, '%Y%m%d').date()
+            except:
+                pass
+            
             # Policy 생성 또는 업데이트
             policy, created = Policy.objects.update_or_create(
                 plcy_no=item['plcyNo'],
@@ -82,6 +104,9 @@ class Command(BaseCommand):
                     'plcy_aply_mthd_cn': item.get('plcyAplyMthdCn', ''),
                     'aply_url_addr': item.get('aplyUrlAddr', ''),
                     'district': district,
+                    # [BRAIN4-19] 사업기간 필드
+                    'biz_prd_bgng_ymd': biz_prd_bgng_ymd,
+                    'biz_prd_end_ymd': biz_prd_end_ymd,
                 }
             )
             

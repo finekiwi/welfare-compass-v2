@@ -40,3 +40,63 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = PolicyListSerializer(policies, many=True)
         return Response(serializer.data)
+    
+    # =========================================================================
+    # [BRAIN4-19] 달력용 API
+    # =========================================================================
+    @action(detail=False, methods=['get'])
+    def calendar(self, request):
+        """
+        달력 이벤트 목록 API
+        
+        Query Params:
+        - year: 연도 (기본: 현재 연도)
+        - month: 월 (기본: 현재 월)
+        - mode: 'apply' (신청기간) 또는 'biz' (사업기간), 기본: 'apply'
+        
+        Returns:
+        - events: 해당 월에 해당하는 정책 목록 (날짜 데이터 포함)
+        """
+        from .serializers import CalendarEventSerializer
+        from django.db.models import Q
+        
+        # 파라미터 파싱
+        today = date.today()
+        year = int(request.query_params.get('year', today.year))
+        month = int(request.query_params.get('month', today.month))
+        mode = request.query_params.get('mode', 'apply')
+        
+        # 해당 월의 시작일/종료일
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            month_end = date(year, month + 1, 1) - timedelta(days=1)
+        
+        # 모드에 따라 필터링
+        if mode == 'biz':
+            # 사업기간 기준: 해당 월과 겹치는 정책
+            policies = Policy.objects.filter(
+                biz_prd_bgng_ymd__isnull=False,
+                biz_prd_end_ymd__isnull=False
+            ).filter(
+                Q(biz_prd_bgng_ymd__lte=month_end) & Q(biz_prd_end_ymd__gte=month_start)
+            )
+        else:
+            # 신청기간 기준 (기본): 해당 월과 겹치는 정책
+            policies = Policy.objects.filter(
+                aply_start_dt__isnull=False,
+                aply_end_dt__isnull=False
+            ).filter(
+                Q(aply_start_dt__lte=month_end) & Q(aply_end_dt__gte=month_start)
+            )
+        
+        serializer = CalendarEventSerializer(policies, many=True)
+        
+        return Response({
+            'year': year,
+            'month': month,
+            'mode': mode,
+            'count': policies.count(),
+            'events': serializer.data
+        })
