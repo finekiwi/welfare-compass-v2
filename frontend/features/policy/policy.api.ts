@@ -15,6 +15,8 @@ function toCardItem(p: Policy): PolicyCardItem {
     title: p.title,
     summary: p.summary,
     region: p.region,
+    category: p.category,
+    isPriority: p.isPriority,
   };
 }
 

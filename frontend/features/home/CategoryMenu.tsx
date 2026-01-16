@@ -9,19 +9,19 @@ export function CategoryMenu() {
     <section className="mb-10">
       <div className="flex flex-wrap items-center justify-center gap-6">
         {HOME_CATEGORIES.map((c) => {
-          const ring = 48;                 // ✅ 링(원형 테두리) 고정 크기
-          const icon = c.iconSize ?? 48;    // ✅ 아이콘은 원하는 크기(48 초과 가능)
+          const ring = 60;                 // ✅ 링(원형 테두리) 고정 크기
+          const icon = c.iconSize ?? 64;    // ✅ 아이콘은 원하는 크기(48 초과 가능)
 
           return (
             <button
               key={c.key}
-              className="flex w-[92px] flex-col items-center gap-2 text-sm text-gray-700"
+              className="flex w-[92px] flex-col items-center gap-2 text-xs text-gray-700"
               type="button"
               onClick={() => console.log("category:", c.key)}
             >
               {/* ✅ 링 기준 좌표계(48 고정) */}
               <span
-                className="relative flex items-center justify-center cursor-pointer"
+                className="relative flex items-center justify-center text-gray-600 cursor-pointer"
                 style={{ width: ring, height: ring }}
               >
                 {/* ✅ 1) 아이콘: 링과 무관하게 크게 (absolute로 가운데 정렬) */}

@@ -60,7 +60,11 @@ export function CalendarPageClient() {
         (async () => {
             setLoading(true);
             try {
-                const list = await fetchCalendarEvents(mode);
+                const list = await fetchCalendarEvents(
+                    mode,
+                    month.getFullYear(),
+                    month.getMonth() + 1
+                );
                 if (alive) setEvents(list);
             } finally {
                 if (alive) setLoading(false);
@@ -69,7 +73,7 @@ export function CalendarPageClient() {
         return () => {
             alive = false;
         };
-    }, [mode]);
+    }, [mode, month]);
 
     // ✅ 날짜(YYYY-MM-DD) -> 이벤트들 매핑
     const eventsByDate = useMemo(() => {

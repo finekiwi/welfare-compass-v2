@@ -233,3 +233,4 @@ out/
 
 # Claude Code
 .claude/
+tmpclaude-*
