@@ -14,7 +14,7 @@ export async function YouthPolicySection() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {policies.map((p) => (
           <PolicyCard key={p.id} policy={p} />
         ))}

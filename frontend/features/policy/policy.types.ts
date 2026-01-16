@@ -31,4 +31,4 @@ export type Policy = {
 };
 
 // ✅ 카드(UI)에 필요한 최소 필드만 뽑은 타입
-export type PolicyCardItem = Pick<Policy, "id" | "title" | "summary" | "region">;
+export type PolicyCardItem = Pick<Policy, "id" | "title" | "summary" | "region" | "category" | "isPriority">;

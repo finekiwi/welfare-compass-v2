@@ -4,9 +4,9 @@ import Image from "next/image";
 
 export function Header() {
   return (
-    <header className="border-b bg-white">
-      <div className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
+    <header className="bg-white">
+      <div className="border-b border-gray-200 mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4">
+        <Link href="/" className="flex items-center gap-2 text-sm md:text-base font-semibold">
           <Image
             src="/logo/welfarecompass.png"
             alt="복지나침반 로고"
@@ -18,7 +18,7 @@ export function Header() {
           <span>복지나침반</span>
         </Link>
 
-        <nav className="flex items-center gap-6 text-sm text-gray-700">
+        <nav className="flex items-center gap-2 md:gap-6 text-xs md:text-sm font-semibold text-gray-700">
           <Link href="/policy" className="hover:text-gray-900">
             복지찾기
           </Link>
@@ -34,7 +34,7 @@ export function Header() {
         </nav>
 
         {/* ✅ 우측: 로그인 / 회원가입 링크 */}
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-1 md:gap-3 text-xs md:text-sm">
           <Link href="/login" className="text-gray-700 hover:text-gray-900">
             로그인
           </Link>
@@ -45,7 +45,7 @@ export function Header() {
           {/* 회원가입은 버튼처럼 보이게 */}
           <Link
             href="/signup"
-            className="rounded-md px-3 py-1.5 font-medium"
+            className="rounded-mdmd:px-3 py-1.5 font-medium"
           >
             회원가입
           </Link>
