@@ -8,7 +8,7 @@ export async function YouthPolicySection() {
   return (
     <section className="pb-10">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">청년지원정책</h2>
+        <h2 className="text-base font-semibold">청년지원정책</h2>
         <button className="rounded-full border px-4 py-2 text-xs text-gray-700">
           청년지원정책 더보기 &gt;
         </button>

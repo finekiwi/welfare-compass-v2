@@ -122,6 +122,7 @@ function toCardItem(p: Policy): PolicyCardItem {
     region: p.region,
     category: p.category,
     isPriority: p.isPriority,
+    content: p.content,
   };
 }
 
@@ -192,6 +193,12 @@ export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]
     const response = await api.get<PolicyListResponse>("/api/policies/", {
       params: { search: "청년", page_size: limit },
     });
+
+    // 🛑 RAW 데이터 확인
+    if (response.data.results.length > 0) {
+      console.log("🔥 RAW API Response [0]:", response.data.results[0]);
+    }
+
     return response.data.results.map(toPolicy).map(toCardItem);
   } catch (error) {
     console.error("fetchYouthPolicyCards error:", error);

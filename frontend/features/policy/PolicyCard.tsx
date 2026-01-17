@@ -64,9 +64,21 @@ export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
               </span>
             </div>
 
-            <p className="whitespace-pre-line text-sm leading-6 text-gray-700">
-              {policy.summary}
-            </p>
+            {/* 1. 정책 설명 */}
+            <div className="mb-2">
+              <p className="mb-1 text-[11px] font-bold text-gray-900">정책 설명</p>
+              <p className="line-clamp-3 text-xs leading-4 text-gray-600">
+                {policy.summary}
+              </p>
+            </div>
+
+            {/* 2. 지원 내용 */}
+            <div>
+              <p className="mb-1 text-[11px] font-bold text-gray-900">지원 내용</p>
+              <p className="line-clamp-3 text-xs leading-4 text-gray-600">
+                {policy.content || "상세 내용을 확인하세요."}
+              </p>
+            </div>
 
             <div className="mt-auto pt-4 text-xs text-gray-500">
               클릭하면 상세 페이지로 이동

@@ -2,10 +2,19 @@
 import Link from "next/link";
 import Image from "next/image";
 import { UserMenu } from "@/features/auth/components/UserMenu";
+import { FontSizeControl } from "@/components/common/FontSizeControl";
 
 export function Header() {
   return (
     <header className="bg-white">
+      {/* ✅ 접근성 탑바 (글자 크기 조절) */}
+      <div className="border-b border-gray-100 bg-gray-50">
+        <div className="mx-auto flex h-9 max-w-[1280px] items-center justify-end px-4">
+          <FontSizeControl />
+        </div>
+      </div>
+
+      {/* ✅ 메인 헤더 */}
       <div className="border-b border-gray-200 mb-3 mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 text-sm md:text-lg font-semibold">
           <Image
@@ -34,8 +43,10 @@ export function Header() {
           </Link>
         </nav>
 
-        {/* ✅ 우측: 로그인 / 회원가입 (클라이언트 컴포넌트) */}
-        <UserMenu />
+        {/* ✅ 우측: 로그인 / 회원가입 */}
+        <div className="flex items-center gap-3">
+          <UserMenu />
+        </div>
       </div>
     </header>
   );
