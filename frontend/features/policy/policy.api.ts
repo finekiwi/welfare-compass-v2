@@ -129,19 +129,30 @@ function toCardItem(p: Policy): PolicyCardItem {
 /**
  * ✅ 검색 페이지용 정책 목록
  */
-export async function fetchPolicies(params?: PolicySearchParams): Promise<Policy[]> {
+/**
+ * ✅ 검색 페이지용 정책 목록
+ */
+export async function fetchPolicies(
+  params?: PolicySearchParams
+): Promise<{ policies: Policy[]; totalCount: number }> {
   try {
     const response = await api.get<PolicyListResponse>("/api/policies/", {
       params: {
         search: params?.q,
+        category: params?.category === "all" ? undefined : params?.category,
+        region: params?.region,
         page: params?.page || 1,
+        page_size: 12, // ✅ 한 페이지당 12개 고정
       },
     });
 
-    return response.data.results.map(toPolicy);
+    return {
+      policies: response.data.results.map(toPolicy),
+      totalCount: response.data.count,
+    };
   } catch (error) {
     console.error("fetchPolicies error:", error);
-    return [];
+    return { policies: [], totalCount: 0 };
   }
 }
 
@@ -199,7 +210,7 @@ export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]
       console.log("🔥 RAW API Response [0]:", response.data.results[0]);
     }
 
-    return response.data.results.map(toPolicy).map(toCardItem);
+    return response.data.results.slice(0, limit).map(toPolicy).map(toCardItem);
   } catch (error) {
     console.error("fetchYouthPolicyCards error:", error);
     return [];

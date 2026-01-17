@@ -14,6 +14,7 @@ class SignupView(generics.CreateAPIView):
     POST /api/accounts/signup/
     """
     queryset = User.objects.all()
+    authentication_classes = [] # ✅ 만료된 토큰이 있어도 무시하고 진행 (401 방지)
     permission_classes = [AllowAny]
     serializer_class = UserSerializer
     

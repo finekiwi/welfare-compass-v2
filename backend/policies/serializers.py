@@ -20,6 +20,8 @@ class PolicyListSerializer(serializers.ModelSerializer):
             'district',
             'aply_end_dt',
             'categories',
+            'plcy_expln_cn',  # ✅ 정책 설명 추가
+            'plcy_sprt_cn',   # ✅ 지원 내용 추가
         ]
 
 

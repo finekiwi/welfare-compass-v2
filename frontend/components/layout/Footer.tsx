@@ -103,6 +103,7 @@ export function Footer() {
         {/* 우측: 마크/배너 */}
         <div className="md:col-span-2 md:flex md:justify-end">
           <div className="flex items-center gap-4 md:flex-col md:items-end">
+            {/* 
             {FOOTER.marks.map((m) => (
               <Image
                 key={m.src}
@@ -112,7 +113,8 @@ export function Footer() {
                 height={m.h}
                 className="h-auto w-auto object-contain"
               />
-            ))}
+            ))} 
+            */}
           </div>
         </div>
       </div>

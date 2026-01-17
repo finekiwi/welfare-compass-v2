@@ -30,7 +30,7 @@ export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
           </span>
         </div>
 
-        <h3 className="line-clamp-2 h-14 text-md font-extrabold tracking-tight text-gray-900">
+        <h3 className="line-clamp-2 h-12 text-md font-extrabold tracking-tight text-gray-900">
           {policy.title}
         </h3>
       </div>
@@ -80,9 +80,6 @@ export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
               </p>
             </div>
 
-            <div className="mt-auto pt-4 text-xs text-gray-500">
-              클릭하면 상세 페이지로 이동
-            </div>
           </div>
         </div>
       </div>

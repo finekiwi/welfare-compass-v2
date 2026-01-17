@@ -30,6 +30,44 @@ class Policy(models.Model):
     job_cd = models.CharField(max_length=100, blank=True)
     school_cd = models.CharField(max_length=100, blank=True)
 
+    # =========================================================================
+    # [BRAIN4-14] 특수조건 필드 추가 - API 코드 기반 필터링
+    # =========================================================================
+    #
+    # ❌ BEFORE: 특수조건 필드 없음
+    # - matching.py에서 매번 텍스트 파싱으로 "신혼", "한부모" 등 체크
+    # - "신혼부부 우대" vs "신혼부부 전용" 구분 불가능 → 버그 발생
+    #
+    # ✅ AFTER: API sbizCd 기반 Boolean 필드 추가
+    # - ETL 단계에서 한 번만 파싱하여 Boolean 저장
+    # - matching.py에서는 단순히 Boolean 체크만 하면 됨
+    # - 코드: 0014003=기초수급자, 0014004=한부모, 0014005=장애인
+    # =========================================================================
+    
+    sbiz_cd = models.CharField(
+        max_length=200, 
+        blank=True,
+        help_text='API 원본 sbizCd (콤마 구분)'
+    )
+    
+    is_for_single_parent = models.BooleanField(
+        default=False,
+        help_text='한부모 전용 정책 (sbizCd: 0014004)'
+    )
+    is_for_disabled = models.BooleanField(
+        default=False,
+        help_text='장애인 전용 정책 (sbizCd: 0014005)'
+    )
+    is_for_low_income = models.BooleanField(
+        default=False,
+        help_text='기초수급자 전용 정책 (sbizCd: 0014003)'
+    )
+    is_for_newlywed = models.BooleanField(
+        default=False,
+        help_text='신혼부부 전용 정책 (API 코드 없음 → 텍스트 파싱)'
+    )
+    # =========================================================================
+
     # 신청 정보
     aply_start_dt = models.DateField(null=True, blank=True)
     aply_end_dt = models.DateField(null=True, blank=True)

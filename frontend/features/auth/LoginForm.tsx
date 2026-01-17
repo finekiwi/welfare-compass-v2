@@ -34,8 +34,21 @@ export function LoginForm() {
 
       // 로그인 성공 후 마이페이지로 보내는 예시
       router.push("/mypage");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      // 백엔드 에러 원인에 따른 한글 메시지 처리
+      if (err.response?.status === 401) {
+        // "Given token not valid..." 포함한 토큰 에러 처리
+        if (JSON.stringify(err.response?.data).includes("token_not_valid")) {
+          setError("❌ 인증 정보가 만료되었습니다. 다시 시도해주세요.");
+        } else {
+          setError("❌ 아이디 또는 비밀번호가 일치하지 않습니다.");
+        }
+      } else if (err.response?.status === 400) {
+        setError("❌ 입력 정보를 다시 확인해주세요.");
+      } else {
+        setError("❌ 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+      }
     } finally {
       setLoading(false);
     }

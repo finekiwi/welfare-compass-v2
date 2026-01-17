@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchPolicies } from "./policy.api";
 import { Policy, PolicyCategory } from "./policy.types";
 import { PolicyCard } from "./PolicyCard";
+import { Pagination } from "@/components/common/Pagination";
 
 const CATEGORY_OPTIONS: Array<{ value: PolicyCategory | "all"; label: string }> = [
     { value: "all", label: "전체" },
@@ -21,18 +22,34 @@ export function PolicySearchPageClient() {
     const [q, setQ] = useState("");
     const [category, setCategory] = useState<PolicyCategory | "all">("all");
     const [region, setRegion] = useState("서울시");
+    const [page, setPage] = useState(1); // ✅ 페이지 상태 추가
+
     const [items, setItems] = useState<Policy[]>([]);
+    const [totalCount, setTotalCount] = useState(0); // ✅ 전체 개수 상태 추가
     const [loading, setLoading] = useState(false);
 
-    // ✅ 최초 1회 로드 + 검색 조건 변경 시 로드
+    // ✅ 검색 조건 변경 시 1페이지로 리셋
+    useEffect(() => {
+        setPage(1);
+    }, [q, category, region]);
+
+    // ✅ 데이터 로드 (페이지 변경 포함)
     useEffect(() => {
         let alive = true;
 
         (async () => {
             setLoading(true);
             try {
-                const list = await fetchPolicies({ q, category, region });
-                if (alive) setItems(list);
+                const { policies, totalCount } = await fetchPolicies({
+                    q,
+                    category,
+                    region,
+                    page,
+                });
+                if (alive) {
+                    setItems(policies);
+                    setTotalCount(totalCount);
+                }
             } finally {
                 if (alive) setLoading(false);
             }
@@ -41,12 +58,12 @@ export function PolicySearchPageClient() {
         return () => {
             alive = false;
         };
-    }, [q, category, region]);
+    }, [q, category, region, page]);
 
     const countText = useMemo(() => {
         if (loading) return "불러오는 중...";
-        return `총 ${items.length}건`;
-    }, [items.length, loading]);
+        return `총 ${totalCount}건`;
+    }, [totalCount, loading]);
 
     return (
         <div className="mx-auto w-full max-w-[1280px] px-4 py-8">
@@ -127,6 +144,14 @@ export function PolicySearchPageClient() {
                     </div>
                 )}
             </section>
+
+            {/* ✅ 페이지네이션 */}
+            <Pagination
+                currentPage={page}
+                totalCount={totalCount}
+                itemsPerPage={12}
+                onPageChange={setPage}
+            />
         </div>
     );
 }
