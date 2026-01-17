@@ -22,4 +22,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('policies.urls')),
     path('api/accounts/', include('accounts.urls')),
+    path('api/v1/chat/', include('chat.urls')),  # [BRAIN4-20] Chat API
 ]
+
