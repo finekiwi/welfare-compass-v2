@@ -10,10 +10,13 @@ dependencies = [
     "django-cors-headers>=4.9.0",
     "django-filter>=25.2",
     "djangorestframework-simplejwt>=5.5.1",
+    "kiwipiepy>=0.22.2",
     "langchain>=1.2.0",
     "langchain-chroma>=1.1.0",
+    "langchain-community>=0.4.1",
     "langchain-openai>=1.1.6",
     "psycopg2-binary>=2.9.11",
     "python-dotenv>=1.2.1",
+    "rank-bm25>=0.2.2",
     "requests>=2.32.5",
 ]
