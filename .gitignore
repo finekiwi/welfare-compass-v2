@@ -247,3 +247,20 @@ out/
 # Claude Code
 .claude/
 tmpclaude-*
+
+# ETL 로그 및 태스크 파일
+logs/
+tasks/
+docs/
+
+# 테스트 결과 및 데이터
+test/
+data/processed/
+llm/evaluation/test/
+
+# 테스트 스크립트
+scripts/run_*_reranker.sh
+scripts/run_full_test.sh
+scripts/run_reranker_test.sh
+scripts/check_config.sh
+scripts/TEST_SCRIPTS.md
