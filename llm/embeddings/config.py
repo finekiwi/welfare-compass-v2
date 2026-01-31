@@ -38,7 +38,7 @@ from typing import Literal, FrozenSet, Dict, Optional
 # ============================================================================
 # 타입 정의
 # ============================================================================
-RerankerType = Literal["none", "cohere", "ko-reranker", "bge-reranker-v2-m3"]
+RerankerType = Literal["none", "ko-reranker", "bge-reranker-v2-m3"]
 
 
 # ============================================================================
