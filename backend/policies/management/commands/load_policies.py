@@ -15,9 +15,6 @@ from policies.models import Policy, Category
 # =============================================================================
 # [BRAIN4-14] 특수조건 코드 상수
 # =============================================================================
-# 온통청년 API의 sbizCd 필드에서 사용되는 코드값
-# 참고: 신혼부부는 API에 코드가 없어서 텍스트 파싱 필요
-# =============================================================================
 SBIZ_CODE_LOW_INCOME = '0014003'     # 기초수급자
 SBIZ_CODE_SINGLE_PARENT = '0014004'  # 한부모
 SBIZ_CODE_DISABLED = '0014005'       # 장애인
@@ -26,28 +23,19 @@ SBIZ_CODE_DISABLED = '0014005'       # 장애인
 # =============================================================================
 # [BRAIN4-14] 신혼부부 "전용" 정책 판별 함수
 # =============================================================================
-#
-# ❌ BEFORE: 함수 없음 → matching.py에서 매번 텍스트 파싱
-# - "신혼" 키워드만 있으면 무조건 제외 → "우대" 정책도 제외되는 버그
-#
-# ✅ AFTER: ETL 단계에서 "전용" 여부 판별하여 Boolean 저장
-# - "우대/가점" 패턴 → 전용 아님 (False)
-# - "전용/한해" 패턴 → 전용임 (True)
-# - 패턴 없음 → 전용 아님으로 간주 (False) - 포용적 접근
-# =============================================================================
 
 def _is_newlywed_exclusive(policy_text: str) -> bool:
     """
     신혼부부 '전용' 정책인지 텍스트에서 판단
     (API에 신혼부부 코드가 없으므로 텍스트 파싱 필요)
-    
+
     Returns:
         True: 신혼부부 전용 (비신혼부부 제외해야 함)
         False: 신혼부부 우대/가점 또는 해당없음 (모두 포함)
     """
     if '신혼' not in policy_text:
         return False
-    
+
     # 포용적 표현 (이게 있으면 전용 아님 - 일반 청년도 지원 가능)
     inclusive_patterns = [
         '신혼부부 우대', '신혼부부 우선', '신혼부부 가점', '신혼부부 가산',
@@ -55,22 +43,22 @@ def _is_newlywed_exclusive(policy_text: str) -> bool:
         '신혼부부 포함', '신혼부부 해당자',
         '신혼부부인 경우 우대', '신혼부부인 경우 가점',
     ]
-    
+
     for pattern in inclusive_patterns:
         if pattern in policy_text:
             return False
-    
+
     # 배타적 표현 (이게 있으면 전용 - 신혼부부만 지원 가능)
     exclusive_patterns = [
         '신혼부부 전용', '신혼부부만 가능', '신혼부부만 신청',
         '신혼부부만 지원', '신혼부부에 한해', '신혼부부에 한함',
         '신혼부부에 한하여', '신혼부부 가구만',
     ]
-    
+
     for pattern in exclusive_patterns:
         if pattern in policy_text:
             return True
-    
+
     # 패턴 없으면 포용적으로 판단 (전용 아님)
     return False
 
@@ -81,29 +69,27 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         # JSON 파일 경로
         json_path = '../data/raw/seoul_policies.json'
-        
+
         with open(json_path, 'r', encoding='utf-8') as f:
             policies = json.load(f)
-        
+
         # 카테고리 미리 생성
         category_names = ['복지문화', '일자리', '교육', '주거', '참여권리', '기타']
         categories = {}
         for name in category_names:
             cat, _ = Category.objects.get_or_create(name=name)
             categories[name] = cat
-        
+
         self.stdout.write(f'카테고리 {len(categories)}개 생성 완료')
-        
-        # =====================================================================
-        # [BRAIN4-14] 특수조건 통계 카운터 추가
-        # =====================================================================
+
+        # [BRAIN4-14] 특수조건 통계 카운터
         stats = {
             'single_parent': 0,
             'disabled': 0,
             'low_income': 0,
             'newlywed': 0,
         }
-        
+
         # 정책 적재
         count = 0
         for item in policies:
@@ -112,10 +98,10 @@ class Command(BaseCommand):
             rgtr_inst = item.get('rgtrInstCdNm', '')
             if rgtr_inst and rgtr_inst != '서울특별시':
                 district = rgtr_inst.replace('서울특별시 ', '')
-            
+
             # 신청기간 파싱: "20250916 ~ 20250926"
-            aply_start_dt = None
-            aply_end_dt = None
+            apply_start = None  # [RENAME] aply_start_dt → apply_start (로컬 변수)
+            apply_end = None  # [RENAME] aply_end_dt → apply_end (로컬 변수)
             aply_ymd = item.get('aplyYmd', '')
             if aply_ymd and '~' in aply_ymd:
                 parts = aply_ymd.split('~')
@@ -123,12 +109,12 @@ class Command(BaseCommand):
                     start = parts[0].strip()
                     end = parts[1].strip()
                     if start:
-                        aply_start_dt = datetime.strptime(start, '%Y%m%d').date()
+                        apply_start = datetime.strptime(start, '%Y%m%d').date()
                     if end:
-                        aply_end_dt = datetime.strptime(end, '%Y%m%d').date()
+                        apply_end = datetime.strptime(end, '%Y%m%d').date()
                 except:
                     pass
-            
+
             # 나이 파싱
             min_age = None
             max_age = None
@@ -141,52 +127,32 @@ class Command(BaseCommand):
                     max_age = int(max_age_str)
             except:
                 pass
-            
-            # =================================================================
-            # [BRAIN4-19] 사업기간 파싱 추가
-            # =================================================================
-            #
-            # ❌ BEFORE: bizPrdBgngYmd, bizPrdEndYmd 필드 무시
-            # - 원본 JSON에 있는데 파싱 안 함 → 달력에서 사업기간 표시 불가
-            #
-            # ✅ AFTER: "YYYYMMDD" → date 변환하여 DB 저장
-            # - 프론트 달력의 mode='biz' 지원
-            # =================================================================
-            biz_prd_bgng_ymd = None
-            biz_prd_end_ymd = None
+
+            # [BRAIN4-19] 사업기간 파싱
+            biz_start = None  # [RENAME] biz_prd_bgng_ymd → biz_start (로컬 변수)
+            biz_end = None  # [RENAME] biz_prd_end_ymd → biz_end (로컬 변수)
             try:
                 bgng = item.get('bizPrdBgngYmd', '')
                 end = item.get('bizPrdEndYmd', '')
                 if bgng and len(bgng) == 8:
-                    biz_prd_bgng_ymd = datetime.strptime(bgng, '%Y%m%d').date()
+                    biz_start = datetime.strptime(bgng, '%Y%m%d').date()
                 if end and len(end) == 8:
-                    biz_prd_end_ymd = datetime.strptime(end, '%Y%m%d').date()
+                    biz_end = datetime.strptime(end, '%Y%m%d').date()
             except:
                 pass
 
-            # =================================================================
-            # [BRAIN4-14] 특수조건 파싱 추가
-            # =================================================================
-            #
-            # ❌ BEFORE: sbizCd 필드 무시
-            # - API에 구조화된 코드가 있는데 활용 안 함
-            # - matching.py에서 매번 텍스트 파싱 → 부정확
-            #
-            # ✅ AFTER: sbizCd 파싱하여 Boolean 필드 설정
-            # - API 코드 기반으로 정확한 "전용" 정책 판별
-            # - matching.py에서는 단순히 Boolean 체크만 하면 됨
-            # =================================================================
+            # [BRAIN4-14] 특수조건 파싱
             sbiz_cd = item.get('sbizCd', '')
-            
+
             # sbizCd 기반 Boolean 설정
             is_for_single_parent = SBIZ_CODE_SINGLE_PARENT in sbiz_cd
             is_for_disabled = SBIZ_CODE_DISABLED in sbiz_cd
             is_for_low_income = SBIZ_CODE_LOW_INCOME in sbiz_cd
-            
+
             # 신혼부부: 텍스트 파싱 (API 코드 없음)
             policy_text = f"{item.get('plcyExplnCn', '')} {item.get('plcySprtCn', '')}"
             is_for_newlywed = _is_newlywed_exclusive(policy_text)
-            
+
             # 통계 업데이트
             if is_for_single_parent:
                 stats['single_parent'] += 1
@@ -196,33 +162,32 @@ class Command(BaseCommand):
                 stats['low_income'] += 1
             if is_for_newlywed:
                 stats['newlywed'] += 1
-            # =================================================================
-            
+
             # Policy 생성 또는 업데이트
             policy, created = Policy.objects.update_or_create(
-                plcy_no=item['plcyNo'],
+                policy_id=item['plcyNo'],  # [RENAME] plcy_no → policy_id
                 defaults={
-                    'plcy_nm': item.get('plcyNm', ''),
-                    'plcy_expln_cn': item.get('plcyExplnCn', ''),
-                    'plcy_sprt_cn': item.get('plcySprtCn', ''),
-                    'sprt_trgt_min_age': min_age,
-                    'sprt_trgt_max_age': max_age,
-                    'sprt_trgt_age_lmt_yn': item.get('sprtTrgtAgeLmtYn', ''),
-                    'earn_cnd_se_cd': item.get('earnCndSeCd', ''),
-                    'earn_min_amt': int(item['earnMinAmt']) if item.get('earnMinAmt') and item['earnMinAmt'] != '' else None,
-                    'earn_max_amt': int(item['earnMaxAmt']) if item.get('earnMaxAmt') and item['earnMaxAmt'] != '' else None,
-                    'mrg_stts_cd': item.get('mrgSttsCd', ''),
-                    'job_cd': item.get('jobCd', ''),
-                    'school_cd': item.get('schoolCd', ''),
-                    'aply_start_dt': aply_start_dt,
-                    'aply_end_dt': aply_end_dt,
-                    'plcy_aply_mthd_cn': item.get('plcyAplyMthdCn', ''),
-                    'aply_url_addr': item.get('aplyUrlAddr', ''),
+                    'title': item.get('plcyNm', ''),  # [RENAME] plcy_nm → title
+                    'description': item.get('plcyExplnCn', ''),  # [RENAME] plcy_expln_cn → description
+                    'support_content': item.get('plcySprtCn', ''),  # [RENAME] plcy_sprt_cn → support_content
+                    'age_min': min_age,  # [RENAME] sprt_trgt_min_age → age_min
+                    'age_max': max_age,  # [RENAME] sprt_trgt_max_age → age_max
+                    # [REMOVED] sprt_trgt_age_lmt_yn 삭제
+                    'income_level': item.get('earnCndSeCd', ''),  # [RENAME] earn_cnd_se_cd → income_level
+                    'income_min': int(item['earnMinAmt']) if item.get('earnMinAmt') and item['earnMinAmt'] != '' else None,  # [RENAME] earn_min_amt → income_min
+                    'income_max': int(item['earnMaxAmt']) if item.get('earnMaxAmt') and item['earnMaxAmt'] != '' else None,  # [RENAME] earn_max_amt → income_max
+                    'marriage_status': item.get('mrgSttsCd', ''),  # [RENAME] mrg_stts_cd → marriage_status
+                    'employment_status': item.get('jobCd', ''),  # [RENAME] job_cd → employment_status
+                    'education_status': item.get('schoolCd', ''),  # [RENAME] school_cd → education_status
+                    'apply_start_date': apply_start,  # [RENAME] aply_start_dt → apply_start_date
+                    'apply_end_date': apply_end,  # [RENAME] aply_end_dt → apply_end_date
+                    'apply_method': item.get('plcyAplyMthdCn', ''),  # [RENAME] plcy_aply_mthd_cn → apply_method
+                    'apply_url': item.get('aplyUrlAddr', ''),  # [RENAME] aply_url_addr → apply_url
                     'district': district,
                     # [BRAIN4-19] 사업기간 필드
-                    'biz_prd_bgng_ymd': biz_prd_bgng_ymd,
-                    'biz_prd_end_ymd': biz_prd_end_ymd,
-                    # [BRAIN4-14] 특수조건 필드 추가
+                    'business_start_date': biz_start,  # [RENAME] biz_prd_bgng_ymd → business_start_date
+                    'business_end_date': biz_end,  # [RENAME] biz_prd_end_ymd → business_end_date
+                    # [BRAIN4-14] 특수조건 필드 (변경 없음)
                     'sbiz_cd': sbiz_cd,
                     'is_for_single_parent': is_for_single_parent,
                     'is_for_disabled': is_for_disabled,
@@ -230,25 +195,25 @@ class Command(BaseCommand):
                     'is_for_newlywed': is_for_newlywed,
                 }
             )
-            
+
             # 카테고리 연결 (M:N)
             lclsf = item.get('lclsfNm', '').strip()
             if lclsf:
                 cat_names = [c.strip() for c in lclsf.split(',') if c.strip()]
             else:
                 cat_names = ['기타']
-            
+
             policy.categories.clear()
             for cat_name in cat_names:
                 if cat_name in categories:
                     policy.categories.add(categories[cat_name])
                 else:
                     policy.categories.add(categories['기타'])
-            
+
             count += 1
             if count % 50 == 0:
                 self.stdout.write(f'{count}개 처리 중...')
-        
+
         # 완료 메시지 + 특수조건 통계
         self.stdout.write(self.style.SUCCESS(f'완료! 총 {count}개 정책 적재'))
         self.stdout.write(self.style.SUCCESS(

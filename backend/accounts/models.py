@@ -213,4 +213,4 @@ class Scrap(models.Model):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.user.username} - {self.policy.plcy_nm}"
+        return f"{self.user.username} - {self.policy.title}"  # [RENAME] plcy_nm → title

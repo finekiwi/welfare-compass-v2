@@ -17,5 +17,5 @@ urlpatterns = [
     
     # 스크랩
     path('scraps/', ScrapListView.as_view(), name='scrap-list'),
-    path('scraps/<str:plcy_no>/', ScrapDetailView.as_view(), name='scrap-detail'),
+    path('scraps/<str:policy_id>/', ScrapDetailView.as_view(), name='scrap-detail'),  # [RENAME] plcy_no → policy_id
 ]

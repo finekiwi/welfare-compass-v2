@@ -9,6 +9,6 @@ class CategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Policy)
 class PolicyAdmin(admin.ModelAdmin):
-    list_display = ['plcy_no', 'plcy_nm', 'district', 'aply_end_dt']
+    list_display = ['policy_id', 'title', 'district', 'apply_end_date']  # [RENAME] plcy_no → policy_id, plcy_nm → title, aply_end_dt → apply_end_date
     list_filter = ['categories', 'district']
-    search_fields = ['plcy_nm', 'plcy_expln_cn']
+    search_fields = ['title', 'description']  # [RENAME] plcy_nm → title, plcy_expln_cn → description

@@ -59,18 +59,18 @@ class ScrapDetailView(generics.GenericAPIView):
     """스크랩 추가/삭제"""
     permission_classes = [IsAuthenticated]
     
-    def post(self, request, plcy_no):
+    def post(self, request, policy_id):  # [RENAME] plcy_no → policy_id
         """스크랩 추가"""
-        policy = get_object_or_404(Policy, plcy_no=plcy_no)
+        policy = get_object_or_404(Policy, policy_id=policy_id)  # [RENAME] plcy_no → policy_id
         scrap, created = Scrap.objects.get_or_create(user=request.user, policy=policy)
-        
+
         if created:
             return Response({"message": "스크랩되었습니다."}, status=status.HTTP_201_CREATED)
         return Response({"message": "이미 스크랩된 정책입니다."}, status=status.HTTP_200_OK)
-    
-    def delete(self, request, plcy_no):
+
+    def delete(self, request, policy_id):  # [RENAME] plcy_no → policy_id
         """스크랩 삭제"""
-        policy = get_object_or_404(Policy, plcy_no=plcy_no)
+        policy = get_object_or_404(Policy, policy_id=policy_id)  # [RENAME] plcy_no → policy_id
         deleted, _ = Scrap.objects.filter(user=request.user, policy=policy).delete()
         
         if deleted:

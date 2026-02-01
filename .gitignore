@@ -247,3 +247,8 @@ out/
 # Claude Code
 .claude/
 tmpclaude-*
+
+# ETL 로그 및 태스크 파일
+logs/
+tasks/
+docs/

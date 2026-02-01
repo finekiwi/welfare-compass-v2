@@ -14,42 +14,29 @@ class Category(models.Model):
 
 class Policy(models.Model):
     # 기본 정보
-    plcy_no = models.CharField(max_length=30, primary_key=True)
-    plcy_nm = models.CharField(max_length=200)
-    plcy_expln_cn = models.TextField(blank=True)
-    plcy_sprt_cn = models.TextField(blank=True)
+    policy_id = models.CharField(max_length=30, primary_key=True)  # [RENAME] plcy_no → policy_id
+    title = models.CharField(max_length=200)  # [RENAME] plcy_nm → title
+    description = models.TextField(blank=True)  # [RENAME] plcy_expln_cn → description
+    support_content = models.TextField(blank=True)  # [RENAME] plcy_sprt_cn → support_content
 
     # 자격 요건
-    sprt_trgt_min_age = models.IntegerField(null=True, blank=True)
-    sprt_trgt_max_age = models.IntegerField(null=True, blank=True)
-    sprt_trgt_age_lmt_yn = models.CharField(max_length=1, blank=True)
-    earn_cnd_se_cd = models.CharField(max_length=20, blank=True)
-    earn_min_amt = models.IntegerField(null=True, blank=True)
-    earn_max_amt = models.IntegerField(null=True, blank=True)
-    mrg_stts_cd = models.CharField(max_length=20, blank=True)
-    job_cd = models.CharField(max_length=100, blank=True)
-    school_cd = models.CharField(max_length=100, blank=True)
+    age_min = models.IntegerField(null=True, blank=True)  # [RENAME] sprt_trgt_min_age → age_min
+    age_max = models.IntegerField(null=True, blank=True)  # [RENAME] sprt_trgt_max_age → age_max
+    # [REMOVED] sprt_trgt_age_lmt_yn 삭제
+    income_level = models.CharField(max_length=20, blank=True)  # [RENAME] earn_cnd_se_cd → income_level
+    income_min = models.IntegerField(null=True, blank=True)  # [RENAME] earn_min_amt → income_min
+    income_max = models.IntegerField(null=True, blank=True)  # [RENAME] earn_max_amt → income_max
+    marriage_status = models.CharField(max_length=20, blank=True)  # [RENAME] mrg_stts_cd → marriage_status
+    employment_status = models.CharField(max_length=100, blank=True)  # [RENAME] job_cd → employment_status
+    education_status = models.CharField(max_length=100, blank=True)  # [RENAME] school_cd → education_status
 
-    # =========================================================================
-    # [BRAIN4-14] 특수조건 필드 추가 - API 코드 기반 필터링
-    # =========================================================================
-    #
-    # ❌ BEFORE: 특수조건 필드 없음
-    # - matching.py에서 매번 텍스트 파싱으로 "신혼", "한부모" 등 체크
-    # - "신혼부부 우대" vs "신혼부부 전용" 구분 불가능 → 버그 발생
-    #
-    # ✅ AFTER: API sbizCd 기반 Boolean 필드 추가
-    # - ETL 단계에서 한 번만 파싱하여 Boolean 저장
-    # - matching.py에서는 단순히 Boolean 체크만 하면 됨
-    # - 코드: 0014003=기초수급자, 0014004=한부모, 0014005=장애인
-    # =========================================================================
-    
+    # 특수조건 필드 - API 코드 기반 필터링 (변경 없음)
     sbiz_cd = models.CharField(
-        max_length=200, 
+        max_length=200,
         blank=True,
         help_text='API 원본 sbizCd (콤마 구분)'
     )
-    
+
     is_for_single_parent = models.BooleanField(
         default=False,
         help_text='한부모 전용 정책 (sbizCd: 0014004)'
@@ -66,47 +53,45 @@ class Policy(models.Model):
         default=False,
         help_text='신혼부부 전용 정책 (API 코드 없음 → 텍스트 파싱)'
     )
-    # =========================================================================
 
     # 신청 정보
-    aply_start_dt = models.DateField(null=True, blank=True)
-    aply_end_dt = models.DateField(null=True, blank=True)
-    plcy_aply_mthd_cn = models.TextField(blank=True)
-    aply_url_addr = models.CharField(max_length=500, blank=True)
+    apply_start_date = models.DateField(null=True, blank=True)  # [RENAME] aply_start_dt → apply_start_date
+    apply_end_date = models.DateField(null=True, blank=True)  # [RENAME] aply_end_dt → apply_end_date
+    apply_method = models.TextField(blank=True)  # [RENAME] plcy_aply_mthd_cn → apply_method
+    apply_url = models.CharField(max_length=500, blank=True)  # [RENAME] aply_url_addr → apply_url
 
-    # =========================================================================
-    # [BRAIN4-19] 사업기간 필드 추가 - 달력 기능용
-    # =========================================================================
-    #
-    # ❌ BEFORE: 사업기간 필드 없음
-    # - 원본 API(온통청년)에는 bizPrdBgngYmd, bizPrdEndYmd가 있는데 저장 안 함
-    # - 프론트 달력에서 "사업기간" 모드 선택 시 보여줄 데이터 없음
-    #
-    # ✅ AFTER: 사업기간 필드 추가
-    # - 원본 API 필드명과 동일하게 명명 (나중에 ETL 배치잡에서 매핑 용이)
-    # - load_policies.py에서 파싱하여 저장
-    # =========================================================================
-    biz_prd_bgng_ymd = models.DateField(
-        null=True, blank=True, 
+    # 사업기간
+    business_start_date = models.DateField(  # [RENAME] biz_prd_bgng_ymd → business_start_date
+        null=True, blank=True,
         help_text='사업시작일 - 원본: bizPrdBgngYmd'
     )
-    biz_prd_end_ymd = models.DateField(
-        null=True, blank=True, 
+    business_end_date = models.DateField(  # [RENAME] biz_prd_end_ymd → business_end_date
+        null=True, blank=True,
         help_text='사업종료일 - 원본: bizPrdEndYmd'
     )
 
-    # 지역
+    # 지역 (변경 없음)
     district = models.CharField(max_length=20, null=True, blank=True)
 
-    # 카테고리 (M:N)
+    # 카테고리 (대분류/중분류)
+    category = models.CharField(  # [RENAME] lclsf_nm → category
+        max_length=50, blank=True,
+        help_text='대분류 (일자리, 주거, 교육, 복지문화, 참여권리)'
+    )
+    subcategory = models.CharField(  # [RENAME] mclsf_nm → subcategory
+        max_length=50, blank=True,
+        help_text='중분류 (원본 API mclsfNm)'
+    )
+
+    # 카테고리 (M:N, 변경 없음)
     categories = models.ManyToManyField(Category, related_name='policies')
 
     # 메타
-    frst_reg_dt = models.DateTimeField(null=True, blank=True)
-    last_mdfcn_dt = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(null=True, blank=True)  # [RENAME] frst_reg_dt → created_at
+    updated_at = models.DateTimeField(null=True, blank=True)  # [RENAME] last_mdfcn_dt → updated_at
 
     class Meta:
         db_table = 'policy'
 
     def __str__(self):
-        return self.plcy_nm
+        return self.title  # [RENAME] self.plcy_nm → self.title

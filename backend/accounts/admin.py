@@ -15,4 +15,4 @@ class ProfileAdmin(admin.ModelAdmin):
 class ScrapAdmin(admin.ModelAdmin):
     list_display = ['user', 'policy', 'created_at']
     list_filter = ['created_at']
-    search_fields = ['user__username', 'policy__plcy_nm']
+    search_fields = ['user__username', 'policy__title']  # [RENAME] policy__plcy_nm → policy__title
