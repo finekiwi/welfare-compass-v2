@@ -32,6 +32,9 @@ export function ProfileSummaryCard() {
         );
     }
 
+    // 나이 계산
+    const age = profile.birthYear ? new Date().getFullYear() - profile.birthYear : null;
+
     return (
         <div className="space-y-6">
             {/* 상단 제목 */}
@@ -72,13 +75,13 @@ export function ProfileSummaryCard() {
                 {/* 우측 요약 타일 */}
                 <div className="rounded-2xl bg-gray-50 p-6">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        <Tile title="관심지역" value={profile.interestDistrict || "-"} />
-                        <Tile title="연령" value={profile.age ? `${profile.age}세` : "-"} />
-                        <Tile title="혼인여부" value={profile.maritalStatus === "single" ? "미혼" : profile.maritalStatus === "married" ? "기혼" : "-"} />
+                        <Tile title="거주지역" value={profile.district || "-"} />
+                        <Tile title="연령" value={age ? `만 ${age}세` : "-"} />
+                        <Tile title="혼인여부" value={labelMarriage(profile.marriageStatus)} />
 
-                        <Tile title="연소득(만원)" value={profile.incomeMin || profile.incomeMax ? `${profile.incomeMin ?? "-"} ~ ${profile.incomeMax ?? "-"}` : "-"} />
-                        <Tile title="학력" value={labelEducation(profile.education)} />
-                        <Tile title="전공분야" value={labelMajor(profile.majorField)} />
+                        <Tile title="주거형태" value={labelHousing(profile.housingType)} />
+                        <Tile title="소득수준" value={labelIncomeLevel(profile.incomeLevel)} />
+                        <Tile title="가구원수" value={profile.householdSize ? `${profile.householdSize}명` : "-"} />
 
                         <div className="md:col-span-2">
                             <div className="rounded-xl border bg-white p-5 text-center">
@@ -91,9 +94,11 @@ export function ProfileSummaryCard() {
 
                         <div>
                             <div className="rounded-xl border bg-white p-5 text-center">
-                                <div className="text-xs text-gray-500">특화분야</div>
+                                <div className="text-xs text-gray-500">특수조건</div>
                                 <div className="mt-2 text-sm font-semibold text-blue-800">
-                                    {labelSpecial(profile.specialtyField)}
+                                    {profile.specialConditions && profile.specialConditions.length > 0
+                                        ? profile.specialConditions.join(", ")
+                                        : "-"}
                                 </div>
                             </div>
                         </div>
@@ -121,63 +126,46 @@ export function ProfileSummaryCard() {
 }
 
 // ---- 라벨 변환(가독성용) ----
-function labelEducation(v: any) {
+function labelMarriage(v: string) {
     const map: Record<string, string> = {
-        none: "-",
-        lt_high: "고졸 미만",
-        high_in_school: "고교 재학",
-        high_expected: "고졸 예정",
-        high_grad: "고교 졸업",
-        college_in_school: "대학 재학",
-        college_expected: "대졸 예정",
-        college_grad: "대학 졸업",
-        graduate: "석·박사",
+        single: "미혼",
+        married: "기혼",
         other: "기타",
     };
     return map[v] ?? "-";
 }
-function labelJob(v: any) {
+
+function labelHousing(v: string) {
     const map: Record<string, string> = {
-        none: "-",
-        worker: "재직자",
-        self_employed: "자영업자",
-        unemployed: "미취업자",
+        jeonse: "전세",
+        monthly: "월세",
+        owned: "자가",
+        gosiwon: "고시원",
+        parents: "부모님집",
+        public: "공공임대",
+        other: "기타",
+    };
+    return map[v] ?? "-";
+}
+
+function labelIncomeLevel(v: string) {
+    const map: Record<string, string> = {
+        below_50: "중위 50% 이하",
+        below_100: "중위 100% 이하",
+        above_100: "중위 100% 초과",
+        unknown: "모름",
+    };
+    return map[v] ?? "-";
+}
+
+function labelJob(v: string) {
+    const map: Record<string, string> = {
+        employed: "재직중",
+        unemployed: "미취업",
+        job_seeking: "구직중",
+        student: "학생",
+        startup: "창업준비",
         freelancer: "프리랜서",
-        daily_worker: "일용근로자",
-        startup_preparing: "(예비)창업자",
-        short_term_worker: "단기근로자",
-        agriculture: "농업인",
-        military: "군인",
-        local_talent: "지역인재",
-        other: "기타",
-    };
-    return map[v] ?? "-";
-}
-function labelMajor(v: any) {
-    const map: Record<string, string> = {
-        none: "-",
-        humanities: "인문계열",
-        social: "사회계열",
-        business: "상경계열",
-        science: "이학계열",
-        engineering: "공학계열",
-        arts: "예체능계열",
-        agriculture: "농산업계열",
-        other: "기타",
-    };
-    return map[v] ?? "-";
-}
-function labelSpecial(v: any) {
-    const map: Record<string, string> = {
-        none: "-",
-        sme: "중소기업",
-        women: "여성",
-        basic_living: "기초생활수급자",
-        single_parent: "한부모가정",
-        disabled: "장애인",
-        agriculture: "농업인",
-        military: "군인",
-        local_talent: "지역인재",
         other: "기타",
     };
     return map[v] ?? "-";

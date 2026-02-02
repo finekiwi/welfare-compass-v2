@@ -46,10 +46,12 @@ INSTALLED_APPS = [
     'django_filters',
     'rest_framework',
     'rest_framework_simplejwt',
+    'django_q',  # 비동기 태스크 큐
     'policies',
     'accounts',
     'chat',
     'etl',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -155,3 +157,29 @@ CORS_ALLOW_CREDENTIALS = True
 
 # 온통청년 API
 YOUTH_API_KEY = os.getenv('YOUTH_API_KEY', '')
+
+# Email settings
+# 개발환경: 콘솔 출력, 프로덕션: Gmail SMTP
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+
+DEFAULT_FROM_EMAIL = '복지나침반 <welfarecompass.dev@gmail.com>'
+
+# Django-Q2 설정 (비동기 태스크 큐)
+# PostgreSQL을 브로커로 사용 (Redis 불필요)
+Q_CLUSTER = {
+    'name': 'welfare',
+    'workers': 2,
+    'timeout': 120,
+    'retry': 180,
+    'queue_limit': 50,
+    'bulk': 10,
+    'orm': 'default',  # 기존 PostgreSQL DB 사용
+}

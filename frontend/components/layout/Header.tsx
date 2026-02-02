@@ -1,10 +1,21 @@
-// components/layout/Header.tsx
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { UserMenu } from "@/features/auth/components/UserMenu";
 import { FontSizeControl } from "@/components/common/FontSizeControl";
+import { useAuthStore } from "@/stores/auth.store";
+import { useEffect } from "react";
 
 export function Header() {
+  const { isAuthenticated, isInitialized, initialize } = useAuthStore();
+
+  useEffect(() => {
+    if (!isInitialized) {
+      initialize();
+    }
+  }, [isInitialized, initialize]);
+
   return (
     <header className="bg-white">
       {/* ✅ 접근성 탑바 (글자 크기 조절) */}
@@ -38,9 +49,11 @@ export function Header() {
           <Link href="/map" className="hover:text-gray-900">
             복지지도
           </Link>
-          <Link href="/mypage" className="hover:text-gray-900">
-            마이페이지
-          </Link>
+          {isAuthenticated && (
+            <Link href="/mypage" className="hover:text-gray-900">
+              마이페이지
+            </Link>
+          )}
         </nav>
 
         {/* ✅ 우측: 로그인 / 회원가입 */}

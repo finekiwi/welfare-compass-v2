@@ -127,6 +127,42 @@ def _check_special_conditions(policy, user_info):
     return True
 
 
+def is_policy_matching_user(policy, user_info: dict) -> bool:
+    """
+    정책이 사용자 정보와 매칭되는지 확인 (공통 함수)
+    
+    notifications/services.py 등 다른 모듈에서 import하여 사용
+    매칭 기준 변경 시 이 함수만 수정하면 됨 (DRY 원칙)
+    
+    Args:
+        policy: Policy 모델 인스턴스
+        user_info: Profile.to_matching_dict() 결과
+        
+    Returns:
+        bool: 매칭 여부
+    """
+    # 1. 나이 체크
+    user_age = user_info.get('age')
+    if user_age is not None:
+        if policy.age_min and user_age < policy.age_min:
+            return False
+        if policy.age_max and user_age > policy.age_max:
+            return False
+    
+    # 2. 지역 체크 (정책에 지역 제한이 있는 경우)
+    user_residence = user_info.get('residence', '')
+    if policy.district and user_residence:
+        # 정책 지역과 사용자 지역이 일치하지 않으면 제외
+        if policy.district not in user_residence and user_residence not in policy.district:
+            return False
+    
+    # 3. 특수조건 체크 (한부모, 장애인, 수급자, 신혼 등)
+    if not _check_special_conditions(policy, user_info):
+        return False
+    
+    return True
+
+
 def _get_relevant_categories(user_info):
     """
     사용자 맥락에서 관련 카테고리 도출

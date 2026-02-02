@@ -216,3 +216,72 @@ export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]
     return [];
   }
 }
+
+// =========================================================================
+// [맞춤추천 API] - 로그인 필수
+// =========================================================================
+
+interface RecommendedPolicyItem extends BackendPolicy {
+  match_score: number;
+}
+
+interface RecommendedPoliciesResponse {
+  count: number;
+  profile_summary: {
+    age: number | null;
+    district: string;
+    housing_type: string;
+    job_status: string;
+    interests: string[];
+    special_conditions: string[];
+  };
+  results: RecommendedPolicyItem[];
+}
+
+export type RecommendedPolicyParams = {
+  category?: string;
+  exclude?: string[];  // 제외할 정책 ID 배열
+  limit?: number;      // 최대 20
+};
+
+/**
+ * ✅ 맞춤추천 정책 목록 (로그인 필수)
+ * 
+ * 백엔드: GET /api/policies/recommended/
+ * - 사용자 프로필 기반 매칭 점수 계산
+ * - 인증 토큰 필요 (axios interceptor에서 자동 주입)
+ */
+export async function fetchRecommendedPolicies(
+  params?: RecommendedPolicyParams
+): Promise<{
+  policies: (PolicyCardItem & { matchScore: number })[];
+  profileSummary: RecommendedPoliciesResponse["profile_summary"];
+  totalCount: number;
+}> {
+  try {
+    const response = await api.get<RecommendedPoliciesResponse>(
+      "/api/policies/recommended/",
+      {
+        params: {
+          category: params?.category,
+          exclude: params?.exclude?.join(","),
+          limit: params?.limit || 10,
+        },
+      }
+    );
+
+    const policies = response.data.results.map((item) => ({
+      ...toCardItem(toPolicy(item)),
+      matchScore: item.match_score,
+    }));
+
+    return {
+      policies,
+      profileSummary: response.data.profile_summary,
+      totalCount: response.data.count,
+    };
+  } catch (error) {
+    console.error("fetchRecommendedPolicies error:", error);
+    throw error; // 에러는 호출하는 쪽에서 처리 (401 등)
+  }
+}

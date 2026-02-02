@@ -7,6 +7,9 @@ export type SignupRequest = {
     email?: string;
     password: string;
     password2: string;
+    // 정책 알림 동의
+    email_notification_enabled?: boolean;
+    notification_email?: string;
 };
 
 export type SignupResponse = {

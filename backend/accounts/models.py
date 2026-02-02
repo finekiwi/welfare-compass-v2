@@ -136,6 +136,17 @@ class Profile(models.Model):
         help_text='필요한 지원 분야 리스트 (예: ["주거", "일자리"])'
     )
     
+    # 이메일 알림 설정
+    email_notification_enabled = models.BooleanField(
+        default=False,
+        verbose_name='정책정보 알림 수신 동의'
+    )
+    notification_email = models.EmailField(
+        blank=True, null=True,
+        verbose_name='알림 수신 이메일',
+        help_text='정책 알림을 받을 이메일 주소'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -195,11 +206,6 @@ def create_user_profile(sender, instance, created, **kwargs):
     if created:
         Profile.objects.create(user=instance)
 
-
-@receiver(post_save, sender=User)
-def save_user_profile(sender, instance, **kwargs):
-    if hasattr(instance, 'profile'):
-        instance.profile.save()
 
 class Scrap(models.Model):
     """사용자의 관심 정책 스크랩"""

@@ -21,7 +21,7 @@ const CATEGORY_OPTIONS: Array<{ value: PolicyCategory | "all"; label: string }> 
 export function PolicySearchPageClient() {
     const [q, setQ] = useState("");
     const [category, setCategory] = useState<PolicyCategory | "all">("all");
-    const [region, setRegion] = useState("서울시");
+    const [region, setRegion] = useState("");
     const [page, setPage] = useState(1); // ✅ 페이지 상태 추가
 
     const [items, setItems] = useState<Policy[]>([]);
@@ -87,6 +87,7 @@ export function PolicySearchPageClient() {
                         value={region}
                         onChange={(e) => setRegion(e.target.value)}
                     >
+                        <option value="">전체 지역</option>
                         <option value="서울시">서울시</option>
                         <option value="전국">전국</option>
                     </select>

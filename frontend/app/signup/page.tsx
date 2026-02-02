@@ -1,10 +1,10 @@
 // app/signup/page.tsx
-import { SignupForm } from "@/features/auth/SignupForm";
+import { TermsAgreementForm } from "@/features/auth/terms/TermsAgreementForm";
 
 export default function SignupPage() {
   return (
     <main className="px-4 py-10">
-      <SignupForm />
+      <TermsAgreementForm />
     </main>
   );
 }

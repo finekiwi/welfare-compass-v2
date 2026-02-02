@@ -57,6 +57,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'has_children', 'children_ages',
             'special_conditions', 'needs',
             'interests', 'interests_display',
+            'email_notification_enabled', 'notification_email',
             'age',
             'created_at', 'updated_at'
         ]

@@ -2,3 +2,7 @@ Django>=5.0
 djangorestframework>=3.14
 psycopg2-binary>=2.9
 python-dotenv>=1.0
+django-q2>=1.6.0
+django-cors-headers>=4.0
+django-filter>=23.0
+djangorestframework-simplejwt>=5.3

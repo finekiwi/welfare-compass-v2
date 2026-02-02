@@ -79,7 +79,7 @@ export function MapPageClient() {
                                 key={cat}
                                 className={`rounded-full px-3 py-1 text-xs font-medium transition
                   ${filter.category === cat
-                                        ? "bg-blue-600 text-white"
+                                        ? "bg-blue-900 text-white"
                                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                                     }`}
                                 onClick={() => setFilter({ ...filter, category: cat })}

@@ -3,15 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "./auth.api";
+import { useAuthStore } from "@/stores/auth.store";
 
 /**
  * LoginForm
- * - simplejwt TokenObtainPairView: username/password → access/refresh 반환 :contentReference[oaicite:6]{index=6}
- * - 데모 구현: localStorage에 저장
- *   (실서비스에서는 httpOnly cookie + 서버에서 토큰 관리가 더 안전)
+ * - simplejwt TokenObtainPairView: username/password → access/refresh 반환
+ * - 전역 auth store를 통해 토큰 저장 및 인증 상태 관리
  */
 export function LoginForm() {
   const router = useRouter();
+  const authLogin = useAuthStore((state) => state.login);
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,12 +29,11 @@ export function LoginForm() {
 
       const tokens = await login({ username, password });
 
-      // ✅ 토큰 저장 (간단 버전)
-      localStorage.setItem("access_token", tokens.access);
-      localStorage.setItem("refresh_token", tokens.refresh);
+      // ✅ auth store를 통해 토큰 저장 및 인증 상태 업데이트
+      authLogin(tokens);
 
-      // 로그인 성공 후 마이페이지로 보내는 예시
-      router.push("/mypage");
+      // 로그인 성공 후 메인 페이지로 이동
+      router.push("/");
     } catch (err: any) {
       console.error("Login Error:", err);
       // 백엔드 에러 원인에 따른 한글 메시지 처리

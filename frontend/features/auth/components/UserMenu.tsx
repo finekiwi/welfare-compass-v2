@@ -3,38 +3,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api } from "@/services/axios";
+import { useEffect } from "react";
+import { useAuthStore } from "@/stores/auth.store";
 
 export function UserMenu() {
     const router = useRouter();
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [mounted, setMounted] = useState(false);
+    const { isAuthenticated, isInitialized, initialize, logout } = useAuthStore();
 
+    // 컴포넌트 마운트 시 인증 상태 초기화
     useEffect(() => {
-        setMounted(true);
-        // localStorage 체크로 로그인 상태 확인
-        const token = localStorage.getItem("access_token");
-        setIsLoggedIn(!!token);
-    }, []);
+        if (!isInitialized) {
+            initialize();
+        }
+    }, [isInitialized, initialize]);
 
     const handleLogout = () => {
-        // 1. 토큰 삭제
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-
-        // 2. 상태 업데이트
-        setIsLoggedIn(false);
-
-        // 3. 메인으로 이동 & 새로고침 (헤더 상태 갱신 확실히 하기 위해)
-        // router.push("/") 대신 window.location.href 사용이 더 확실할 수 있음
-        window.location.href = "/";
+        logout();
+        router.push("/");
     };
 
-    // Hydration mismatch 방지: 마운트 전에는 아무것도 안 보여줌 (또는 스켈레톤)
-    if (!mounted) return null;
+    // Hydration mismatch 방지: 초기화 전에는 아무것도 안 보여줌
+    if (!isInitialized) return null;
 
-    if (isLoggedIn) {
+    if (isAuthenticated) {
         return (
             <div className="flex items-center gap-1 md:gap-3 text-xs md:text-sm text-gray-700">
                 <Link href="/mypage" className="hover:text-gray-900 font-medium">

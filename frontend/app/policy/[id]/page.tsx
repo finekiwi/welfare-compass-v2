@@ -2,6 +2,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { fetchPolicyDetailById } from "@/features/policy/policy.api";
+import { ScrapButton } from "@/features/policy/ScrapButton";
+import { BackButton } from "@/components/common/BackButton";
 
 export default async function PolicyDetailPage({
     params,
@@ -42,12 +44,7 @@ export default async function PolicyDetailPage({
             {/* ✅ 상단 헤더 */}
             <section className="mx-auto w-full max-w-[980px]">
                 {/* 뒤로가기 */}
-                <Link
-                    href="/policy"
-                    className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
-                >
-                    ← 목록으로
-                </Link>
+                <BackButton className="mb-4" />
 
                 {/* 카테고리 태그 */}
                 <div className="flex items-center gap-2 mb-3">
@@ -64,10 +61,15 @@ export default async function PolicyDetailPage({
                     </span>
                 </div>
 
+
+
                 {/* 제목 */}
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6">
-                    {policy.title}
-                </h1>
+                <div className="mb-6 flex items-start justify-between gap-4">
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
+                        {policy.title}
+                    </h1>
+                    <ScrapButton policyId={policy.id} className="mt-1" />
+                </div>
             </section>
 
             {/* ✅ 메인 컨텐츠 */}
@@ -125,7 +127,7 @@ export default async function PolicyDetailPage({
                                 href={policy.applyUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-4 block w-full rounded-lg bg-blue-600 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 transition"
+                                className="mt-4 block w-full rounded-lg bg-blue-900 py-3 text-center text-sm font-medium text-white hover:bg-blue-950 transition"
                             >
                                 신청하기 →
                             </a>

@@ -5,80 +5,84 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { getMyProfile, saveMyProfile } from "./mypage.api";
+import { useProfileStore } from "@/stores/profile.store";
 import type {
     MyProfile,
-    Education,
     JobStatus,
-    MajorField,
-    SpecialtyField,
-    MaritalStatus,
+    EducationStatus,
+    MarriageStatus,
+    IncomeLevel,
+    HousingType,
+    SpecialCondition,
+    NeedCategory,
 } from "./mypage.types";
+import { SEOUL_DISTRICTS } from "./mypage.types";
 
-const INTEREST_REGIONS = ["서울 종로구 외 24", "서울 전역", "강남구", "마포구", "은평구"];
-
-const EDU_OPTIONS: Array<{ v: Education; label: string }> = [
-    { v: "none", label: "제한없음" },
-    { v: "lt_high", label: "고졸 미만" },
-    { v: "high_in_school", label: "고교 재학" },
-    { v: "high_expected", label: "고졸 예정" },
-    { v: "high_grad", label: "고교 졸업" },
-    { v: "college_in_school", label: "대학 재학" },
-    { v: "college_expected", label: "대졸 예정" },
-    { v: "college_grad", label: "대학 졸업" },
-    { v: "graduate", label: "석·박사" },
-    { v: "other", label: "기타" },
-];
+// =========================================================================
+// 옵션 정의 (Backend choices와 동일)
+// =========================================================================
 
 const JOB_OPTIONS: Array<{ v: JobStatus; label: string }> = [
-    { v: "none", label: "제한없음" },
-    { v: "worker", label: "재직자" },
-    { v: "self_employed", label: "자영업자" },
-    { v: "unemployed", label: "미취업자" },
+    { v: "employed", label: "재직중" },
+    { v: "unemployed", label: "미취업" },
+    { v: "job_seeking", label: "구직중" },
+    { v: "student", label: "학생" },
+    { v: "startup", label: "창업준비" },
     { v: "freelancer", label: "프리랜서" },
-    { v: "daily_worker", label: "일용근로자" },
-    { v: "startup_preparing", label: "(예비)창업자" },
-    { v: "short_term_worker", label: "단기근로자" },
     { v: "other", label: "기타" },
 ];
 
-const MAJOR_OPTIONS: Array<{ v: MajorField; label: string }> = [
-    { v: "none", label: "제한없음" },
-    { v: "humanities", label: "인문계열" },
-    { v: "social", label: "사회계열" },
-    { v: "business", label: "상경계열" },
-    { v: "science", label: "이학계열" },
-    { v: "engineering", label: "공학계열" },
-    { v: "arts", label: "예체능계열" },
-    { v: "agriculture", label: "농산업계열" },
+const EDUCATION_OPTIONS: Array<{ v: EducationStatus; label: string }> = [
+    { v: "enrolled", label: "재학" },
+    { v: "on_leave", label: "휴학" },
+    { v: "graduated", label: "졸업" },
+    { v: "dropout", label: "중퇴" },
     { v: "other", label: "기타" },
 ];
 
-const SPECIAL_OPTIONS: Array<{ v: SpecialtyField; label: string }> = [
-    { v: "none", label: "제한없음" },
-    { v: "sme", label: "중소기업" },
-    { v: "women", label: "여성" },
-    { v: "basic_living", label: "기초생활수급자" },
-    { v: "single_parent", label: "한부모가정" },
-    { v: "disabled", label: "장애인" },
-    { v: "agriculture", label: "농업인" },
-    { v: "military", label: "군인" },
-    { v: "local_talent", label: "지역인재" },
+const MARRIAGE_OPTIONS: Array<{ v: MarriageStatus; label: string }> = [
+    { v: "single", label: "미혼" },
+    { v: "married", label: "기혼" },
     { v: "other", label: "기타" },
 ];
 
-/**
- * ✅ Chip
- * - 사진처럼 "가로로 길게 눌러 선택" 스타일
- */
-function Chip({
-    active,
-    label,
-    onClick,
-}: {
-    active: boolean;
-    label: string;
-    onClick: () => void;
-}) {
+const INCOME_LEVEL_OPTIONS: Array<{ v: IncomeLevel; label: string }> = [
+    { v: "below_50", label: "기준중위소득 50% 이하" },
+    { v: "below_100", label: "기준중위소득 100% 이하" },
+    { v: "above_100", label: "기준중위소득 100% 초과" },
+    { v: "unknown", label: "모름" },
+];
+
+const HOUSING_OPTIONS: Array<{ v: HousingType; label: string }> = [
+    { v: "jeonse", label: "전세" },
+    { v: "monthly", label: "월세" },
+    { v: "owned", label: "자가" },
+    { v: "gosiwon", label: "고시원" },
+    { v: "parents", label: "부모님집" },
+    { v: "public", label: "공공임대" },
+    { v: "other", label: "기타" },
+];
+
+const SPECIAL_CONDITION_OPTIONS: Array<{ v: SpecialCondition; label: string }> = [
+    { v: "신혼", label: "신혼부부" },
+    { v: "한부모", label: "한부모가정" },
+    { v: "장애인", label: "장애인" },
+    { v: "기초수급자", label: "기초수급자" },
+];
+
+const NEED_OPTIONS: Array<{ v: NeedCategory; label: string }> = [
+    { v: "주거", label: "주거" },
+    { v: "일자리", label: "일자리" },
+    { v: "복지문화", label: "복지/문화" },
+    { v: "교육", label: "교육" },
+    { v: "건강", label: "건강" },
+];
+
+// =========================================================================
+// 컴포넌트
+// =========================================================================
+
+function Chip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
     return (
         <button
             type="button"
@@ -95,10 +99,63 @@ function Chip({
     );
 }
 
+function MultiSelectChip({
+    active,
+    label,
+    onClick,
+}: {
+    active: boolean;
+    label: string;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "h-10 rounded-lg border px-3 text-sm transition flex items-center gap-1",
+                active
+                    ? "border-blue-800 bg-blue-50 text-blue-800 font-semibold"
+                    : "bg-white hover:bg-gray-50",
+            ].join(" ")}
+        >
+            {active && <span>✓</span>}
+            {label}
+        </button>
+    );
+}
+
+function Card({
+    title,
+    children,
+    right,
+    className = "",
+}: {
+    title: string;
+    children: React.ReactNode;
+    right?: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <section className={`h-full rounded-2xl bg-gray-50 p-6 ${className}`}>
+            <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-[#0b2f6d]">{title}</h2>
+                {right ?? null}
+            </div>
+            {children}
+        </section>
+    );
+}
+
+// =========================================================================
+// 메인 폼
+// =========================================================================
+
 export function ProfileEditForm() {
     const [origin, setOrigin] = useState<MyProfile | null>(null);
     const [form, setForm] = useState<MyProfile | null>(null);
     const [saving, setSaving] = useState(false);
+    const updateProfile = useProfileStore((s) => s.updateProfile);
 
     useEffect(() => {
         (async () => {
@@ -121,6 +178,28 @@ export function ProfileEditForm() {
         );
     }
 
+    function toggleSpecialCondition(condition: SpecialCondition) {
+        if (!form) return;
+        const current = form.specialConditions || [];
+        const exists = current.includes(condition);
+        setForm({
+            ...form,
+            specialConditions: exists
+                ? current.filter((c) => c !== condition)
+                : [...current, condition],
+        });
+    }
+
+    function toggleNeed(need: NeedCategory) {
+        if (!form) return;
+        const current = form.needs || [];
+        const exists = current.includes(need);
+        setForm({
+            ...form,
+            needs: exists ? current.filter((n) => n !== need) : [...current, need],
+        });
+    }
+
     async function onReset() {
         if (!origin) return;
         setForm(origin);
@@ -134,17 +213,21 @@ export function ProfileEditForm() {
             const latest = await getMyProfile();
             setOrigin(latest);
             setForm(latest);
+            await updateProfile(latest);
         } finally {
             setSaving(false);
         }
     }
+
+    // 현재 나이 계산
+    const currentAge = form.birthYear ? new Date().getFullYear() - form.birthYear : null;
 
     return (
         <div className="space-y-6">
             <div className="text-sm text-gray-500">홈 &gt; 마이페이지 &gt; 내게 맞는 정책</div>
             <h1 className="text-3xl font-bold">내게 맞는 정책</h1>
 
-            {/* ✅ 상단 배너(사진 2번 느낌) */}
+            {/* 상단 배너 */}
             <div className="flex flex-col items-start justify-between gap-4 rounded-2xl bg-[#0b2f6d] p-6 text-white md:flex-row md:items-center">
                 <div className="flex items-center gap-4">
                     <div className="grid h-14 w-14 place-items-center rounded-full bg-white/15">
@@ -188,124 +271,127 @@ export function ProfileEditForm() {
                 </div>
             </div>
 
-            {/* ✅ 그리드: 사진처럼 배치 */}
+            {/* 그리드 레이아웃 */}
             <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-3">
-                {/* 1행: 관심지역 / 연령 / 혼인여부 */}
-                <Card
-                    title="관심지역"
-                    right={
-                        <span className="rounded-md bg-gray-900 px-3 py-1 text-xs font-semibold text-white">
-                            선택
-                        </span>
-                    }
-                >
+                {/* ===== 1행: 거주지역 / 출생년도 / 혼인여부 ===== */}
+                <Card title="거주지역">
                     <select
-                        value={form.interestDistrict}
-                        onChange={(e) => setForm({ ...form, interestDistrict: e.target.value })}
+                        value={form.district}
+                        onChange={(e) => setForm({ ...form, district: e.target.value })}
                         className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
                     >
-                        {INTEREST_REGIONS.map((r) => (
-                            <option key={r} value={r}>
-                                {r}
-                            </option>
+                        <option value="">선택하세요</option>
+                        {SEOUL_DISTRICTS.map((d) => (
+                            <option key={d} value={d}>{d}</option>
                         ))}
                     </select>
                 </Card>
 
-                <Card title="연령" right={<button type="button" className="text-gray-400">⟳</button>}>
+                <Card title="출생년도">
                     <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">만</span>
                         <input
                             type="number"
-                            value={form.age ?? ""}
+                            value={form.birthYear ?? ""}
                             onChange={(e) =>
                                 setForm({
                                     ...form,
-                                    age: e.target.value === "" ? null : Number(e.target.value),
+                                    birthYear: e.target.value === "" ? null : Number(e.target.value),
                                 })
                             }
+                            placeholder="예: 1998"
                             className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                            min={0}
-                            max={120}
+                            min={1950}
+                            max={2010}
                         />
-                        <span className="text-sm text-gray-600">세</span>
+                        {currentAge && (
+                            <span className="whitespace-nowrap text-sm text-gray-500">
+                                (만 {currentAge}세)
+                            </span>
+                        )}
                     </div>
                 </Card>
 
-                <Card title="혼인여부">
+                <Card title="혼인 상태">
                     <div className="flex flex-wrap gap-2">
-                        <Chip
-                            active={form.maritalStatus === "none"}
-                            label="제한없음"
-                            onClick={() => setForm({ ...form, maritalStatus: "none" as MaritalStatus })}
-                        />
-                        <Chip
-                            active={form.maritalStatus === "married"}
-                            label="기혼"
-                            onClick={() => setForm({ ...form, maritalStatus: "married" as MaritalStatus })}
-                        />
-                        <Chip
-                            active={form.maritalStatus === "single"}
-                            label="미혼"
-                            onClick={() => setForm({ ...form, maritalStatus: "single" as MaritalStatus })}
-                        />
-                    </div>
-                </Card>
-
-                {/* 2행: ✅ 연소득(2칸) + 학력(1칸) */}
-                <Card title="연소득" className="md:col-span-1">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>연</span>
-                            <input
-                                type="number"
-                                value={form.incomeMin ?? ""}
-                                onChange={(e) =>
-                                    setForm({
-                                        ...form,
-                                        incomeMin: e.target.value === "" ? null : Number(e.target.value),
-                                    })
-                                }
-                                className="h-11 w-30 rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                            />
-                            <span>만원 이상 ~</span>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <input
-                                type="number"
-                                value={form.incomeMax ?? ""}
-                                onChange={(e) =>
-                                    setForm({
-                                        ...form,
-                                        incomeMax: e.target.value === "" ? null : Number(e.target.value),
-                                    })
-                                }
-                                className="h-11 w-30 rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                            />
-                            <span>만원 이하</span>
-                        </div>
-                    </div>
-                </Card>
-
-                <Card title="학력" right={<button type="button" className="text-gray-400">⟳</button>} className="md:col-span-1">
-                    <div className="flex flex-wrap gap-2">
-                        {EDU_OPTIONS.map((o) => (
+                        {MARRIAGE_OPTIONS.map((o) => (
                             <Chip
                                 key={o.v}
-                                active={form.education === o.v}
+                                active={form.marriageStatus === o.v}
                                 label={o.label}
-                                onClick={() => setForm({ ...form, education: o.v })}
+                                onClick={() => setForm({ ...form, marriageStatus: o.v })}
                             />
                         ))}
                     </div>
                 </Card>
 
-                {/* 3행: 취업상태 / 전공 분야 / 특화 분야 */}
-                <Card title="취업상태" right={<button type="button" className="text-gray-400">⟳</button>}>
+                {/* ===== 2행: 주거형태 / 가구원수 / 소득수준 ===== */}
+                <Card title="주거형태">
+                    <div className="flex flex-wrap gap-2">
+                        {HOUSING_OPTIONS.map((o) => (
+                            <Chip
+                                key={o.v}
+                                active={form.housingType === o.v}
+                                label={o.label}
+                                onClick={() => setForm({ ...form, housingType: o.v })}
+                            />
+                        ))}
+                    </div>
+                </Card>
+
+                <Card title="가구원 수">
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="number"
+                            value={form.householdSize ?? ""}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    householdSize: e.target.value === "" ? null : Number(e.target.value),
+                                })
+                            }
+                            placeholder="본인 포함"
+                            className="h-11 w-24 rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
+                            min={1}
+                            max={10}
+                        />
+                        <span className="text-sm text-gray-600">명 (본인 포함)</span>
+                    </div>
+                </Card>
+
+                <Card title="소득 수준">
+                    <select
+                        value={form.incomeLevel}
+                        onChange={(e) => setForm({ ...form, incomeLevel: e.target.value as IncomeLevel })}
+                        className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
+                    >
+                        <option value="">선택하세요</option>
+                        {INCOME_LEVEL_OPTIONS.map((o) => (
+                            <option key={o.v} value={o.v}>{o.label}</option>
+                        ))}
+                    </select>
+                    <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+                        <span>월 소득</span>
+                        <input
+                            type="number"
+                            value={form.incomeAmount ?? ""}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    incomeAmount: e.target.value === "" ? null : Number(e.target.value),
+                                })
+                            }
+                            placeholder="선택"
+                            className="h-9 w-24 rounded-lg border px-2 text-sm outline-none focus:border-gray-900"
+                        />
+                        <span>만원</span>
+                    </div>
+                </Card>
+
+                {/* ===== 3행: 취업상태 / 학력상태 / 자녀정보 ===== */}
+                <Card title="취업 상태">
                     <div className="flex flex-wrap gap-2">
                         {JOB_OPTIONS.map((o) => (
-                            <SquarePick
+                            <Chip
                                 key={o.v}
                                 active={form.jobStatus === o.v}
                                 label={o.label}
@@ -315,31 +401,133 @@ export function ProfileEditForm() {
                     </div>
                 </Card>
 
-                <Card title="전공 분야" right={<button type="button" className="text-gray-400">⟳</button>}>
+                <Card title="학력 상태">
                     <div className="flex flex-wrap gap-2">
-                        {MAJOR_OPTIONS.map((o) => (
-                            <SquarePick
+                        {EDUCATION_OPTIONS.map((o) => (
+                            <Chip
                                 key={o.v}
-                                active={form.majorField === o.v}
+                                active={form.educationStatus === o.v}
                                 label={o.label}
-                                onClick={() => setForm({ ...form, majorField: o.v })}
+                                onClick={() => setForm({ ...form, educationStatus: o.v })}
                             />
                         ))}
                     </div>
                 </Card>
 
-                <Card title="특화 분야" right={<button type="button" className="text-gray-400">⟳</button>}>
+                <Card title="자녀 정보">
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={form.hasChildren}
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            hasChildren: e.target.checked,
+                                            childrenAges: e.target.checked ? form.childrenAges : [],
+                                        })
+                                    }
+                                    className="h-5 w-5 rounded border-gray-300"
+                                />
+                                <span className="text-sm">자녀 있음</span>
+                            </label>
+                        </div>
+                        {form.hasChildren && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <span>자녀 나이:</span>
+                                <input
+                                    type="text"
+                                    value={(form.childrenAges || []).join(", ")}
+                                    onChange={(e) => {
+                                        const ages = e.target.value
+                                            .split(",")
+                                            .map((s) => parseInt(s.trim()))
+                                            .filter((n) => !isNaN(n));
+                                        setForm({ ...form, childrenAges: ages });
+                                    }}
+                                    placeholder="예: 5, 8"
+                                    className="h-9 flex-1 rounded-lg border px-2 text-sm outline-none focus:border-gray-900"
+                                />
+                            </div>
+                        )}
+                    </div>
+                </Card>
+
+                {/* ===== 4행: 특수조건 (2칸) / 필요분야 (1칸) ===== */}
+                <Card title="특수 조건" className="md:col-span-2">
+                    <p className="mb-3 text-sm text-gray-500">해당하는 조건을 모두 선택하세요</p>
                     <div className="flex flex-wrap gap-2">
-                        {SPECIAL_OPTIONS.map((o) => (
-                            <SquarePick
+                        {SPECIAL_CONDITION_OPTIONS.map((o) => (
+                            <MultiSelectChip
                                 key={o.v}
-                                active={form.specialtyField === o.v}
+                                active={form.specialConditions?.includes(o.v) ?? false}
                                 label={o.label}
-                                onClick={() => setForm({ ...form, specialtyField: o.v })}
+                                onClick={() => toggleSpecialCondition(o.v)}
                             />
                         ))}
                     </div>
                 </Card>
+
+                <Card title="관심 분야">
+                    <p className="mb-3 text-sm text-gray-500">필요한 분야를 선택하세요</p>
+                    <div className="flex flex-wrap gap-2">
+                        {NEED_OPTIONS.map((o) => (
+                            <MultiSelectChip
+                                key={o.v}
+                                active={form.needs?.includes(o.v) ?? false}
+                                label={o.label}
+                                onClick={() => toggleNeed(o.v)}
+                            />
+                        ))}
+                    </div>
+                </Card>
+            </div>
+
+            {/* 이메일 알림 설정 */}
+            <div className="rounded-2xl bg-blue-50 p-6">
+                <h2 className="text-lg font-bold text-[#0b2f6d] mb-4">📬 정책 알림 설정</h2>
+                <div className="space-y-4">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={form.emailNotificationEnabled ?? false}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    emailNotificationEnabled: e.target.checked,
+                                })
+                            }
+                            className="mt-1 h-5 w-5 rounded border-gray-300"
+                        />
+                        <div>
+                            <span className="font-semibold">정책정보 알림 수신 동의</span>
+                            <p className="text-sm text-gray-600 mt-1">
+                                새로운 정책이 등록되면 회원님의 프로필과 매칭되는 정책을 이메일로 알려드립니다.
+                            </p>
+                        </div>
+                    </label>
+
+                    {form.emailNotificationEnabled && (
+                        <div className="ml-8">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                알림 받을 이메일 주소
+                            </label>
+                            <input
+                                type="email"
+                                value={form.notificationEmail ?? ""}
+                                onChange={(e) =>
+                                    setForm({
+                                        ...form,
+                                        notificationEmail: e.target.value || null,
+                                    })
+                                }
+                                placeholder="example@email.com"
+                                className="h-11 w-full max-w-md rounded-lg border px-3 text-sm outline-none focus:border-blue-800"
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="flex justify-end">
@@ -348,63 +536,5 @@ export function ProfileEditForm() {
                 </Link>
             </div>
         </div>
-    );
-}
-
-/**
- * ✅ Card
- * - 사진처럼 "연한 회색 배경 + 둥근 모서리"
- * - h-full: 같은 행에서 카드 높이 균일하게 보이도록
- */
-function Card({
-    title,
-    children,
-    right,
-    className = "",
-}: {
-    title: string;
-    children: React.ReactNode;
-    right?: React.ReactNode;
-    className?: string;
-}) {
-    return (
-        <section className={`h-full rounded-2xl bg-gray-50 p-6 ${className}`}>
-            <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-[#0b2f6d]">{title}</h2>
-                {right ?? null}
-            </div>
-            {children}
-        </section>
-    );
-}
-
-/**
- * ✅ SquarePick
- * - "직사각형 선택 카드"
- */
-function SquarePick({
-    active,
-    label,
-    onClick,
-}: {
-    active: boolean;
-    label: string;
-    onClick: () => void;
-}) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={[
-                "h-11 rounded-xl border bg-white p-3 text-sm transition",
-                active
-                    ? "border-blue-800 bg-blue-50 text-blue-800 font-semibold"
-                    : "hover:bg-gray-50",
-            ].join(" ")}
-        >
-            <div className="grid h-full place-items-center">
-                <span className="text-center leading-snug">{label}</span>
-            </div>
-        </button>
     );
 }

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clearVerified, getMyProfile, getVerifyState, saveMyProfile } from "./mypage.api";
 import type { MyProfile } from "./mypage.types";
+import { api } from "@/services/axios";
 
 export function SecureEditForm() {
     const router = useRouter();
@@ -17,6 +18,12 @@ export function SecureEditForm() {
     const [currentPw, setCurrentPw] = useState("");
     const [newPw, setNewPw] = useState("");
     const [newPw2, setNewPw2] = useState("");
+
+    // 회원탈퇴
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deletePw, setDeletePw] = useState("");
+    const [deleteError, setDeleteError] = useState("");
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -41,9 +48,36 @@ export function SecureEditForm() {
     async function onSave() {
         if (!form) return; // ✅ null이면 저장하지 않음(가드)
         await saveMyProfile(form);
-        // 인증은 보통 “일회성”으로 처리하는 경우가 많아서 저장 후 해제
+        // 인증은 보통 "일회성"으로 처리하는 경우가 많아서 저장 후 해제
         await clearVerified();
         router.push("/mypage");
+    }
+
+    async function handleDeleteAccount() {
+        if (!deletePw.trim()) {
+            setDeleteError("비밀번호를 입력해주세요.");
+            return;
+        }
+
+        setIsDeleting(true);
+        setDeleteError("");
+
+        try {
+            await api.delete("/api/accounts/delete/", {
+                data: { password: deletePw }
+            });
+
+            // 삭제 성공 → 토큰 삭제 및 메인으로 이동
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("refresh_token");
+            alert("회원탈퇴가 완료되었습니다. 이용해주셔서 감사합니다.");
+            window.location.href = "/";
+        } catch (error: any) {
+            const message = error.response?.data?.error || "회원탈퇴에 실패했습니다.";
+            setDeleteError(message);
+        } finally {
+            setIsDeleting(false);
+        }
     }
 
     return (
@@ -146,6 +180,71 @@ export function SecureEditForm() {
                     </label>
                 </div>
             </section>
+
+            {/* 회원탈퇴 */}
+            <section className="rounded-2xl border border-red-100 bg-red-50/30 p-6">
+                <div className="mb-2 text-lg font-bold text-red-700">회원탈퇴</div>
+                <p className="mb-4 text-sm text-gray-600">
+                    회원탈퇴 시 모든 데이터(프로필, 스크랩 등)가 삭제되며 복구할 수 없습니다.
+                </p>
+                <button
+                    type="button"
+                    onClick={() => setShowDeleteModal(true)}
+                    className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                    회원탈퇴
+                </button>
+            </section>
+
+            {/* 회원탈퇴 모달 */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <h2 className="mb-4 text-xl font-bold text-red-700">회원탈퇴 확인</h2>
+                        <p className="mb-4 text-sm text-gray-600">
+                            정말로 탈퇴하시겠습니까? 이 작업은 되돌릴 수 없습니다.<br />
+                            탈퇴를 진행하려면 비밀번호를 입력해주세요.
+                        </p>
+
+                        <input
+                            type="password"
+                            placeholder="비밀번호 입력"
+                            value={deletePw}
+                            onChange={(e) => {
+                                setDeletePw(e.target.value);
+                                setDeleteError("");
+                            }}
+                            className="mb-2 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-red-500"
+                        />
+
+                        {deleteError && (
+                            <div className="mb-4 text-sm text-red-500">{deleteError}</div>
+                        )}
+
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowDeleteModal(false);
+                                    setDeletePw("");
+                                    setDeleteError("");
+                                }}
+                                className="flex-1 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDeleteAccount}
+                                disabled={isDeleting}
+                                className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {isDeleting ? "처리 중..." : "탈퇴하기"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 하단 버튼 */}
             <div className="flex items-center justify-between">
