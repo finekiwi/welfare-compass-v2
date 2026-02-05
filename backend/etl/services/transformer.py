@@ -252,7 +252,23 @@ class PolicyTransformer:
             return None
 
     def _parse_district(self, value: str) -> Optional[str]:
-        """서울특별시 은평구 → 은평구"""
+        """
+        서울특별시 은평구 → 은평구
+
+        정책 등록기관명이 들어오는 경우가 있어, 구 단위만 저장하도록 필터링
+        (예: "과학기술정보통신부 ..." → None)
+        """
         if not value or value == '서울특별시':
             return None
-        return value.replace('서울특별시 ', '')
+
+        # "서울특별시 ○○구" 형태면 구만 추출
+        if value.startswith('서울특별시 '):
+            candidate = value.replace('서울특별시 ', '')
+        else:
+            candidate = value
+
+        # 구 단위만 허용 (기타 기관명/중앙부처는 None)
+        if candidate.endswith('구') and len(candidate) <= 20:
+            return candidate
+
+        return None

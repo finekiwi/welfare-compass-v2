@@ -27,6 +27,6 @@ def notify_on_new_policy(sender, instance, created, **kwargs):
     logger.info(f"[시그널] 신규 정책 감지: {instance.title}")
     
     # 비동기 태스크로 알림 발송 (즉시 리턴)
-    schedule_policy_notification(instance.id)
-    logger.info(f"[시그널] 알림 태스크 큐에 등록됨: policy_id={instance.id}")
-
+    # Policy는 PK가 policy_id이므로 pk 사용
+    schedule_policy_notification(instance.pk)
+    logger.info(f"[시그널] 알림 태스크 큐에 등록됨: policy_id={instance.pk}")

@@ -9,12 +9,12 @@ from django_q.tasks import async_task
 logger = logging.getLogger(__name__)
 
 
-def notify_matching_users_task(policy_id: int) -> dict:
+def notify_matching_users_task(policy_id: str) -> dict:
     """
     신규 정책에 매칭되는 회원들에게 이메일 알림 발송 (비동기 태스크)
     
     Args:
-        policy_id: Policy의 ID
+        policy_id: Policy의 ID (policy_id)
         
     Returns:
         dict: {'sent': int, 'skipped': int, 'failed': int}
@@ -23,7 +23,7 @@ def notify_matching_users_task(policy_id: int) -> dict:
     from .services import notify_matching_users
     
     try:
-        policy = Policy.objects.get(id=policy_id)
+        policy = Policy.objects.get(policy_id=policy_id)
         logger.info(f"[비동기 태스크] 정책 알림 시작: {policy.title}")
         
         stats = notify_matching_users(policy)
@@ -39,12 +39,12 @@ def notify_matching_users_task(policy_id: int) -> dict:
         return {'sent': 0, 'skipped': 0, 'failed': 0, 'error': str(e)}
 
 
-def schedule_policy_notification(policy_id: int):
+def schedule_policy_notification(policy_id: str):
     """
     정책 알림 태스크를 큐에 등록 (즉시 리턴)
     
     Args:
-        policy_id: Policy의 ID
+        policy_id: Policy의 ID (policy_id)
     """
     async_task(
         'notifications.tasks.notify_matching_users_task',
