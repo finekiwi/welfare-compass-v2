@@ -31,23 +31,23 @@ class PolicyExtractor:
     def fetch_and_save(self, region_code: str = "11000") -> Path:
         """
         API에서 데이터 수집 후 JSON 파일로 저장
-        
+
+        Args:
+            region_code: 지역 코드 (기본값 11000=서울)
+                - API의 zipCd 파라미터로 전달
+                - 해당 지역에 적용되는 정책 반환 (중앙부처 포함)
+
         Returns:
             저장된 JSON 파일 경로
         """
-        all_policies = self._fetch_all_pages(region_code)
-        
-        # 서울시만 필터링
-        seoul_policies = [
-            p for p in all_policies
-            if p.get('rgtrHghrkInstCdNm') == '서울특별시'
-        ]
-        
-        logger.info(f"수집 완료: 전체 {len(all_policies)} → 서울 {len(seoul_policies)}")
-        
+        policies = self._fetch_all_pages(region_code)
+
+        # zipCd 파라미터로 이미 지역 필터링됨 (중앙부처 정책 포함)
+        logger.info(f"수집 완료: {len(policies)}개 (지역코드: {region_code})")
+
         # JSON 파일로 저장 (원본 보존)
-        json_path = self._save_to_json(seoul_policies)
-        
+        json_path = self._save_to_json(policies)
+
         return json_path
 
     def load_from_json(self, json_path: Optional[Path] = None) -> list[dict]:

@@ -12,6 +12,9 @@ __pycache__/
 # 벡터 DB (용량 큼, 로컬에서 재생성)
 data/chroma_db/
 
+# Raw 정책 데이터 (ETL로 재생성)
+data/raw/*.json
+
 # 백업 파일
 *_backups.py
 *_backup.py
@@ -199,7 +202,7 @@ cython_debug/
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
 #  and can be added to the global gitignore or merged into this file. However, if you prefer, 
 #  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
 
 # Ruff stuff:
 .ruff_cache/

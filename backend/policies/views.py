@@ -6,7 +6,8 @@ from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, timedelta
 from .models import Policy, Category
 from .serializers import PolicyListSerializer, PolicyDetailSerializer, CategorySerializer
-from .services.matching import match_policies
+# [BRAIN4-31] 회원용/챗봇용 분리
+from .services.matching import match_policies_for_web, match_policies
 
 
 class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
@@ -107,16 +108,21 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
 
     # =========================================================================
     # [BRAIN4-14] 맞춤추천 API
+    # [BRAIN4-31] match_policies_for_web() 사용으로 변경
     # =========================================================================
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def recommended(self, request):
         """
         프로필 기반 맞춤 정책 추천
 
+        [BRAIN4-31] 변경사항:
+        - match_policies_for_web() 사용: 전체 정책 반환 후 limit 슬라이싱
+        - limit=0 또는 미지정 시 전체 반환 (프론트엔드 페이지네이션 지원)
+
         Query Params:
             - category: 특정 카테고리 필터 (선택)
             - exclude: 제외할 정책 ID들, 콤마 구분 (선택)
-            - limit: 최대 개수 (기본 10, 최대 20)
+            - limit: 최대 개수 (0이면 전체, 기본 0, 최대 100)
         """
         profile = request.user.profile
 
@@ -132,15 +138,21 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         category = request.query_params.get('category')
         exclude_str = request.query_params.get('exclude', '')
         exclude_ids = [x.strip() for x in exclude_str.split(',') if x.strip()]
-        limit = min(int(request.query_params.get('limit', 10)), 20)
 
-        # 매칭 실행
-        results = match_policies(
+        # [BRAIN4-31] limit 처리 변경: 0이면 전체, 최대 100
+        limit_param = request.query_params.get('limit', '0')
+        limit = min(int(limit_param), 100) if limit_param else 0
+
+        # [BRAIN4-31] match_policies_for_web() 사용 - 전체 정책 반환
+        results = match_policies_for_web(
             profile=profile,
             exclude_policy_ids=exclude_ids if exclude_ids else None,
             include_category=category,
-            limit=limit
         )
+
+        # limit > 0 이면 슬라이싱
+        if limit > 0:
+            results = results[:limit]
 
         # 응답 구성
         policies = [p for p, score in results]

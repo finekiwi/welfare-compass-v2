@@ -8,28 +8,50 @@ from policies.models import Category
 class Profile(models.Model):
     """사용자 프로필 - 정책 매칭에 필요한 정보"""
     
+    # ==========================================================================
+    # [BRAIN4-31] 취업상태 선택지
+    # - API jobCd 코드와 매핑: 0013001(재직자), 0013002(자영업자), 0013003(미취업자),
+    #   0013004(프리랜서), 0013006(예비창업자)
+    # - 'student'는 API에 없지만 사용자 UX상 필요 → 매칭 시 미취업자(0013003)로 처리
+    # - 'other' 삭제: 매칭에서 사용 안 함, 애매한 선택지 제거
+    # - 'self_employed' 추가: 자영업자(0013002)는 프리랜서(0013004)와 구분 필요
+    # ==========================================================================
     JOB_STATUS_CHOICES = [
-        ('employed', '재직중'),
-        ('unemployed', '미취업'),
-        ('job_seeking', '구직중'),
-        ('student', '학생'),
-        ('startup', '창업준비'),
-        ('freelancer', '프리랜서'),
-        ('other', '기타'),
+        ('employed', '재직중'),        # API: 0013001 (재직자)
+        ('self_employed', '자영업자'), # API: 0013002 (자영업자) - 신규 추가
+        ('unemployed', '미취업'),      # API: 0013003 (미취업자)
+        ('job_seeking', '구직중'),     # API: 0013003 (미취업자와 동일 매핑)
+        ('student', '학생'),           # API 없음 → 매칭 시 0013003으로 처리
+        ('startup', '창업준비'),       # API: 0013006 (예비창업자)
+        ('freelancer', '프리랜서'),    # API: 0013004 (프리랜서)
     ]
     
+    # ==========================================================================
+    # [BRAIN4-31] 학력상태 선택지
+    # - API schoolCd 코드 기반 전면 재구성
+    # - 기존 문제: '재학/졸업'이 고졸인지 대졸인지 모호함
+    # - 변경: 고졸 미만 ~ 석박사까지 명확하게 구분
+    # - 'university_leave'(대학휴학)은 API에 없지만 UX상 필요 → 매칭 시 대학재학으로 처리
+    # - 'other' 삭제: 매칭에서 사용 안 함
+    # ==========================================================================
     EDUCATION_STATUS_CHOICES = [
-        ('enrolled', '재학'),
-        ('on_leave', '휴학'),
-        ('graduated', '졸업'),
-        ('dropout', '중퇴'),
-        ('other', '기타'),
+        ('below_high_school', '고졸 미만'),       # API: 0049001
+        ('high_school_enrolled', '고교 재학'),   # API: 0049002 (+ 0049003 고졸예정 포함 매칭)
+        ('high_school', '고졸'),                 # API: 0049004
+        ('university_enrolled', '대학 재학'),    # API: 0049005
+        ('university_leave', '대학 휴학'),       # API 없음 → 매칭 시 0049005로 처리
+        ('university', '대졸'),                  # API: 0049007 (+ 0049006 대졸예정 포함)
+        ('graduate_school', '석박사'),           # API: 0049008
     ]
     
+    # ==========================================================================
+    # [BRAIN4-31] 혼인상태 선택지
+    # - API mrgSttsCd 코드: 0055001(기혼), 0055002(미혼), 0055003(제한없음)
+    # - 'other' 삭제: 법적으로 미혼/기혼만 존재, 동거는 미혼으로 처리
+    # ==========================================================================
     MARRIAGE_STATUS_CHOICES = [
-        ('single', '미혼'),
-        ('married', '기혼'),
-        ('other', '기타'),
+        ('single', '미혼'),   # API: 0055002
+        ('married', '기혼'),  # API: 0055001
     ]
     
     INCOME_LEVEL_CHOICES = [
@@ -39,15 +61,18 @@ class Profile(models.Model):
         ('unknown', '모름'),
     ]
     
-    # 주거형태 선택지
+    # ==========================================================================
+    # [BRAIN4-31] 주거형태 선택지
+    # - 2026-02-03 회의 결정: 7개 → 3개로 단순화
+    # - 고시원, 공공임대 → '월세'로 통합 (임차 형태)
+    # - 부모님집 → '자가'로 통합 (주거비 부담 없음)
+    # - 'other' 삭제: 매칭에서 사용 안 함
+    # - 기존 데이터 마이그레이션 필요: gosiwon/public→monthly, parents→owned
+    # ==========================================================================
     HOUSING_TYPE_CHOICES = [
         ('jeonse', '전세'),
-        ('monthly', '월세'),
-        ('owned', '자가'),
-        ('gosiwon', '고시원'),
-        ('parents', '부모님집'),
-        ('public', '공공임대'),
-        ('other', '기타'),
+        ('monthly', '월세'),  # 고시원, 공공임대 포함
+        ('owned', '자가'),    # 부모님집 포함
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -165,37 +190,125 @@ class Profile(models.Model):
         return None
     
     def to_matching_dict(self):
-        """matching.py 호환 딕셔너리 변환"""
+        """
+        matching.py 호환 딕셔너리 변환
+
+        [BRAIN4-31] 변경사항:
+        - job_code, education_code, marriage_code 추가: Policy API 코드와 비교용
+        - education_status, marriage_status 추가: 기존 누락 필드
+        - housing_type: 한글 값 (점수 계산용)
+        """
         return {
+            # 기본 정보
             'age': self.age,
             'residence': self.district,
-            'employment_status': self._convert_job_status(),
+
+            # 취업 상태
+            'employment_status': self._convert_job_status(),  # 한글 (점수 계산용) - 기존 호환
+            'job_code': self._get_job_code(),                 # API 코드 (필터링용) - 신규
+
+            # 학력 상태 (API 코드) - [BRAIN4-31] 신규 추가
+            'education_code': self._get_education_code(),
+
+            # 결혼 상태 (API 코드) - [BRAIN4-31] 신규 추가
+            'marriage_code': self._get_marriage_code(),
+
+            # 주거 형태 (한글 - 점수 계산용)
             'housing_type': self._convert_housing_type(),
+
+            # 소득/가구 정보
             'income': self.income_amount,
             'household_size': self.household_size,
+
+            # 자녀 정보
             'has_children': self.has_children,
             'children_ages': self.children_ages or [],
+
+            # 특수조건 및 필요분야
             'special_conditions': self.special_conditions or [],
             'needs': self.needs or [],
         }
     
+    # ==========================================================================
+    # [BRAIN4-31] Profile 값 → 한글/API 코드 변환 함수들
+    # - 한글 변환: matching.py 점수 계산용 (기존 호환)
+    # - API 코드 변환: Policy 필터링용 (신규)
+    # ==========================================================================
+
     def _convert_job_status(self):
-        """job_status를 matching.py 형식으로 변환"""
+        """
+        job_status를 한글 값으로 변환 (matching.py 점수 계산용)
+        - 기존 matching.py의 _calc_priority()에서 한글 값으로 비교
+        """
         mapping = {
             'employed': '재직',
-            'job_seeking': '구직중',
+            'self_employed': '자영업',   # 신규 추가
             'unemployed': '무직',
+            'job_seeking': '구직중',
             'student': '학생',
+            'startup': '창업준비',
+            'freelancer': '프리랜서',
         }
         return mapping.get(self.job_status, '')
+
+    def _get_job_code(self):
+        """
+        job_status를 API jobCd 코드로 변환
+        - Policy.employment_status에 저장된 코드(0013001 등)와 비교용
+        """
+        mapping = {
+            'employed': '0013001',      # 재직자
+            'self_employed': '0013002', # 자영업자
+            'unemployed': '0013003',    # 미취업자
+            'job_seeking': '0013003',   # 구직중 → 미취업자로 매핑
+            'student': '0013003',       # 학생 → 미취업자로 매핑 (API에 학생 코드 없음)
+            'startup': '0013006',       # (예비)창업자
+            'freelancer': '0013004',    # 프리랜서
+        }
+        return mapping.get(self.job_status, '')
+
+    def _get_education_code(self):
+        """
+        education_status를 API schoolCd 코드로 변환
+        - Policy.education_status에 저장된 코드(0049001 등)와 비교용
+        """
+        mapping = {
+            'below_high_school': '0049001',      # 고졸 미만
+            'high_school_enrolled': '0049002',   # 고교 재학 (고졸예정 0049003도 매칭에서 포함)
+            'high_school': '0049004',            # 고교 졸업
+            'university_enrolled': '0049005',    # 대학 재학
+            'university_leave': '0049005',       # 대학 휴학 → 대학 재학으로 매핑
+            'university': '0049007',             # 대학 졸업
+            'graduate_school': '0049008',        # 석·박사
+        }
+        return mapping.get(self.education_status, '')
+
+    def _get_marriage_code(self):
+        """
+        marriage_status를 API mrgSttsCd 코드로 변환
+        - Policy.marriage_status에 저장된 코드(0055001 등)와 비교용
+        """
+        mapping = {
+            'married': '0055001',  # 기혼
+            'single': '0055002',   # 미혼
+        }
+        return mapping.get(self.marriage_status, '')
     
     def _convert_housing_type(self):
-        """housing_type을 matching.py 형식으로 변환"""
+        """
+        housing_type을 한글 값으로 변환 (matching.py 점수 계산용)
+        - [BRAIN4-31] 3개 값으로 단순화
+        - 기존 gosiwon/parents/public/other 값이 DB에 있을 수 있으므로 하위 호환 유지
+        """
         mapping = {
             'jeonse': '전세',
             'monthly': '월세',
-            'gosiwon': '고시원',
-            'public': '임대',
+            'owned': '자가',
+            # 하위 호환: 기존 데이터 마이그레이션 전까지 지원
+            'gosiwon': '월세',   # 고시원 → 월세로 취급
+            'parents': '자가',   # 부모님집 → 자가로 취급
+            'public': '월세',    # 공공임대 → 월세로 취급
+            'other': '',         # 기타 → 빈값 (매칭에서 무시)
         }
         return mapping.get(self.housing_type, '')
 

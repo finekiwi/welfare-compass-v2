@@ -4,27 +4,107 @@
 [BRAIN4-14] 버그 수정 내역:
 1. 특수조건 필터링: 텍스트 파싱 → API 코드 기반 Boolean 필드
 2. 점수 계산: 신혼부부 청년 감점 로직 제거
+
+[BRAIN4-31] 회원용/챗봇용 분리:
+- match_policies_for_web(profile): 회원 웹용 - 전체 정책 반환
+- match_policies_for_chatbot(user_info, top_k): 챗봇용 - 상위 N개 반환
+- match_policies(): deprecated 래퍼 (하위 호환용)
 """
 import re
 from django.db.models import Q
 from policies.models import Policy
 
 
-def match_policies(profile, exclude_policy_ids=None, include_category=None, limit=10):
+# =============================================================================
+# [BRAIN4-31] Public API - 회원용/챗봇용 분리
+# =============================================================================
+
+def match_policies_for_web(profile, exclude_policy_ids=None, include_category=None):
     """
-    사용자 프로필에 맞는 정책 매칭
+    회원 웹용 정책 매칭 - 전체 정책 반환
+
+    [BRAIN4-31] 신규 함수
+    - 회원 "내게 맞는 정책" 페이지에서 사용
+    - 조건에 맞는 모든 정책을 우선순위 순으로 반환
+    - 프론트에서 페이지네이션/무한스크롤 처리
 
     Args:
         profile: accounts.Profile 인스턴스
         exclude_policy_ids: 제외할 정책 ID 리스트
         include_category: 특정 카테고리만 포함
-        limit: 최대 반환 개수
+
+    Returns:
+        list of (Policy, score) tuples - 전체 반환
+    """
+    user_info = profile.to_matching_dict()
+    return _match_policies_core(user_info, exclude_policy_ids, include_category, limit=None)
+
+
+def match_policies_for_chatbot(user_info: dict, top_k: int = 5):
+    """
+    챗봇용 정책 매칭 - 상위 N개만 반환
+
+    [BRAIN4-31] 신규 함수
+    - 챗봇 대화에서 사용 (회원/비회원 모두)
+    - dict 형태의 user_info 직접 입력 (Profile 객체 불필요)
+    - 상위 N개만 반환하여 응답 간결하게 유지
+
+    Args:
+        user_info: 사용자 정보 dict (Profile.to_matching_dict() 형식)
+            필수: age, residence 중 하나 이상 권장
+            선택: employment_status, job_code, education_code, marriage_code,
+                  housing_type, income, household_size, has_children,
+                  children_ages, special_conditions, needs
+        top_k: 반환할 최대 정책 수 (기본값 5)
+
+    Returns:
+        list of (Policy, score) tuples - 상위 top_k개
+    """
+    return _match_policies_core(user_info, exclude_policy_ids=None, include_category=None, limit=top_k)
+
+
+def match_policies(profile, exclude_policy_ids=None, include_category=None, limit=10):
+    """
+    [DEPRECATED] 기존 호환용 래퍼
+
+    [BRAIN4-31] 변경사항:
+    - 새 코드는 match_policies_for_web() 또는 match_policies_for_chatbot() 사용 권장
+    - 기존 views.py 등 호출처와의 하위 호환성 유지
+
+    Args:
+        profile: accounts.Profile 인스턴스
+        exclude_policy_ids: 제외할 정책 ID 리스트
+        include_category: 특정 카테고리만 포함
+        limit: 최대 반환 개수 (기본값 10)
 
     Returns:
         list of (Policy, score) tuples
     """
     user_info = profile.to_matching_dict()
+    return _match_policies_core(user_info, exclude_policy_ids, include_category, limit)
 
+
+# =============================================================================
+# [BRAIN4-31] 내부 핵심 함수
+# =============================================================================
+
+def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_category=None, limit=None):
+    """
+    정책 매칭 핵심 로직 (내부 함수)
+
+    [BRAIN4-31] 기존 match_policies() 로직을 내부 함수로 이동
+    - user_info dict를 직접 받아 처리
+    - limit=None이면 전체 반환
+
+    Args:
+        user_info: 사용자 정보 dict
+        exclude_policy_ids: 제외할 정책 ID 리스트
+        include_category: 특정 카테고리만 포함
+        limit: 최대 반환 개수 (None이면 전체 반환)
+
+    Returns:
+        list of (Policy, score) tuples
+    """
     # Step 1: Django ORM으로 기본 필터링
     queryset = _apply_base_filters(user_info, exclude_policy_ids, include_category)
 
@@ -51,7 +131,14 @@ def match_policies(profile, exclude_policy_ids=None, include_category=None, limi
 
 
 def _apply_base_filters(user_info, exclude_policy_ids, include_category):
-    """Django ORM으로 기본 필터 적용"""
+    """
+    Django ORM으로 기본 필터 적용
+
+    [BRAIN4-31] 변경사항:
+    - 취업 요건(jobCd), 학력 요건(schoolCd), 결혼 상태(mrgSttsCd) 필터링 추가
+    - 기존: 나이/거주지만 필터링 → 28% 정책(114개)의 취업 요건이 무시됨
+    - 개선: API 코드 기반 정확한 필터링
+    """
     queryset = Policy.objects.all()
 
     # 제외할 정책
@@ -80,20 +167,79 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
             Q(district=residence)
         )
 
+    # =========================================================================
+    # [BRAIN4-31] 취업 요건 필터링 (jobCd)
+    # - Policy.employment_status에 저장된 코드(0013001 등)와 사용자 job_code 비교
+    # - 빈 값/제한없음(0013010)/사용자 코드 포함 시 통과
+    # =========================================================================
+    job_code = user_info.get('job_code', '')
+    if job_code:
+        queryset = queryset.filter(
+            Q(employment_status='') |
+            Q(employment_status__isnull=True) |
+            Q(employment_status__contains='0013010') |  # 제한없음
+            Q(employment_status__contains=job_code)
+        )
+
+    # =========================================================================
+    # [BRAIN4-31] 학력 요건 필터링 (schoolCd)
+    # - 고교재학(0049002)은 고졸예정(0049003) 정책도 매칭
+    # =========================================================================
+    education_code = user_info.get('education_code', '')
+    if education_code:
+        if education_code == '0049002':
+            # 고교 재학 → 고졸예정(0049003) 정책도 포함
+            queryset = queryset.filter(
+                Q(education_status='') |
+                Q(education_status__isnull=True) |
+                Q(education_status__contains='0049010') |  # 제한없음
+                Q(education_status__contains=education_code) |
+                Q(education_status__contains='0049003')  # 고졸예정
+            )
+        else:
+            queryset = queryset.filter(
+                Q(education_status='') |
+                Q(education_status__isnull=True) |
+                Q(education_status__contains='0049010') |  # 제한없음
+                Q(education_status__contains=education_code)
+            )
+
+    # =========================================================================
+    # [BRAIN4-31] 결혼 상태 필터링 (mrgSttsCd)
+    # =========================================================================
+    marriage_code = user_info.get('marriage_code', '')
+    if marriage_code:
+        queryset = queryset.filter(
+            Q(marriage_status='') |
+            Q(marriage_status__isnull=True) |
+            Q(marriage_status__contains='0055003') |  # 제한없음
+            Q(marriage_status__contains=marriage_code)
+        )
+
     return queryset.distinct()
 
 
 # =============================================================================
 # [BRAIN4-14] 특수조건 필터링 - 텍스트 파싱 → Boolean 필드 기반
+# [BRAIN4-31] 중소기업/군인 특수조건 추가
 # =============================================================================
+
+# [BRAIN4-31] sbizCd 코드 상수
+SBIZ_CODE_SME = '0014001'       # 중소기업
+SBIZ_CODE_MILITARY = '0014007'  # 군인
+
 
 def _check_special_conditions(policy, user_info):
     """
-    특수조건 체크 - Policy 모델의 Boolean 필드 기반
+    특수조건 체크 - Policy 모델의 Boolean 필드 + sbiz_cd 기반
 
     [BRAIN4-14 개선]
     - 기존: 텍스트에 "신혼" 있으면 무조건 제외 → "우대" 정책도 제외되는 버그
     - 개선: ETL에서 "전용" 여부를 Boolean 필드로 저장 → 정확한 필터링
+
+    [BRAIN4-31] 추가:
+    - 중소기업(0014001), 군인(0014007) 특수조건 필터링
+    - sbiz_cd 필드에서 직접 코드 체크 (Boolean 필드 없음)
     """
     user_special = [s.lower() for s in user_info.get('special_conditions', [])]
 
@@ -117,6 +263,23 @@ def _check_special_conditions(policy, user_info):
         if not any('신혼' in s for s in user_special):
             return False
 
+    # =========================================================================
+    # [BRAIN4-31] 중소기업/군인 전용 정책 (sbiz_cd에서 직접 체크)
+    # - Boolean 필드 없이 sbiz_cd 코드로 판단
+    # - 8개 정책이 중소기업, 8개 정책이 군인 조건 보유
+    # =========================================================================
+    policy_sbiz = policy.sbiz_cd or ''
+
+    # 중소기업 전용 정책
+    if SBIZ_CODE_SME in policy_sbiz:
+        if not any('중소기업' in s for s in user_special):
+            return False
+
+    # 군인 전용 정책
+    if SBIZ_CODE_MILITARY in policy_sbiz:
+        if not any('군인' in s for s in user_special):
+            return False
+
     # 1인가구 체크 (별도 Boolean 필드 없음 - 텍스트 기반 유지)
     policy_text = f"{policy.description or ''} {policy.support_content or ''}"  # [RENAME] plcy_expln_cn → description, plcy_sprt_cn → support_content
     if '1인가구 전용' in policy_text or '1인가구만' in policy_text:
@@ -130,14 +293,18 @@ def _check_special_conditions(policy, user_info):
 def is_policy_matching_user(policy, user_info: dict) -> bool:
     """
     정책이 사용자 정보와 매칭되는지 확인 (공통 함수)
-    
+
     notifications/services.py 등 다른 모듈에서 import하여 사용
     매칭 기준 변경 시 이 함수만 수정하면 됨 (DRY 원칙)
-    
+
+    [BRAIN4-31] 변경사항:
+    - 취업 요건(jobCd), 학력 요건(schoolCd), 결혼 상태(mrgSttsCd) 체크 추가
+    - _apply_base_filters()와 동일한 로직 적용
+
     Args:
         policy: Policy 모델 인스턴스
         user_info: Profile.to_matching_dict() 결과
-        
+
     Returns:
         bool: 매칭 여부
     """
@@ -148,18 +315,53 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
             return False
         if policy.age_max and user_age > policy.age_max:
             return False
-    
+
     # 2. 지역 체크 (정책에 지역 제한이 있는 경우)
     user_residence = user_info.get('residence', '')
     if policy.district and user_residence:
         # 정책 지역과 사용자 지역이 일치하지 않으면 제외
         if policy.district not in user_residence and user_residence not in policy.district:
             return False
-    
-    # 3. 특수조건 체크 (한부모, 장애인, 수급자, 신혼 등)
+
+    # =========================================================================
+    # [BRAIN4-31] 취업 요건 체크 (jobCd)
+    # =========================================================================
+    job_code = user_info.get('job_code', '')
+    policy_job = policy.employment_status or ''
+    if job_code and policy_job:
+        # 제한없음(0013010)이 아니고, 사용자 코드가 포함되지 않으면 제외
+        if '0013010' not in policy_job and job_code not in policy_job:
+            return False
+
+    # =========================================================================
+    # [BRAIN4-31] 학력 요건 체크 (schoolCd)
+    # =========================================================================
+    education_code = user_info.get('education_code', '')
+    policy_edu = policy.education_status or ''
+    if education_code and policy_edu:
+        # 제한없음(0049010)이 아니면 체크
+        if '0049010' not in policy_edu:
+            # 고교재학(0049002)은 고졸예정(0049003)도 매칭
+            if education_code == '0049002':
+                if education_code not in policy_edu and '0049003' not in policy_edu:
+                    return False
+            elif education_code not in policy_edu:
+                return False
+
+    # =========================================================================
+    # [BRAIN4-31] 결혼 상태 체크 (mrgSttsCd)
+    # =========================================================================
+    marriage_code = user_info.get('marriage_code', '')
+    policy_mrg = policy.marriage_status or ''
+    if marriage_code and policy_mrg:
+        # 제한없음(0055003)이 아니고, 사용자 코드가 포함되지 않으면 제외
+        if '0055003' not in policy_mrg and marriage_code not in policy_mrg:
+            return False
+
+    # 4. 특수조건 체크 (한부모, 장애인, 수급자, 신혼, 중소기업, 군인 등)
     if not _check_special_conditions(policy, user_info):
         return False
-    
+
     return True
 
 
@@ -369,16 +571,23 @@ def _calc_priority(policy, user_info, relevant_categories):
     return score
 
 
-def _select_diverse_categories(scored_policies, max_per_category=2, limit=10):
+def _select_diverse_categories(scored_policies, max_per_category=2, limit=None):
     """
     카테고리별로 골고루 선택 (다양성 보장)
 
     [회의 결정사항 2026.01.19 반영]
     - 기존: 대분류(Categories) 기준으로만 분산
     - 변경: 중분류(subcategory)가 있으면 중분류 기준으로 분산 선택
+
+    [BRAIN4-31] 변경사항:
+    - limit=None 처리 추가: 전체 반환 시 max_per_category 제한만 적용
+    - 회원 웹용(match_policies_for_web)에서 전체 정책 반환 지원
     """
     final_results = []
     categories_selected = {}
+
+    # [BRAIN4-31] limit이 None이면 전체 반환 (max_per_category 제한만 적용)
+    effective_limit = limit if limit is not None else len(scored_policies)
 
     for policy, score in scored_policies:
         # 중분류 우선 사용, 없으면 대분류 사용
@@ -388,7 +597,7 @@ def _select_diverse_categories(scored_policies, max_per_category=2, limit=10):
             final_results.append((policy, score))
             categories_selected[cat_name] = categories_selected.get(cat_name, 0) + 1
 
-        if len(final_results) >= limit:
+        if len(final_results) >= effective_limit:
             break
 
     return final_results

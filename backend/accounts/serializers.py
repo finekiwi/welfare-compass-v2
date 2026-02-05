@@ -77,8 +77,19 @@ class ProfileSerializer(serializers.ModelSerializer):
         return value
     
     def validate_special_conditions(self, value):
-        """특수조건 유효성 검사"""
-        valid_conditions = ['신혼', '한부모', '장애', '다자녀', '저소득', '차상위', '기초수급']
+        """
+        특수조건 유효성 검사
+
+        [BRAIN4-31] 변경사항:
+        - '중소기업', '군인' 추가: API sbizCd에 해당 코드 존재
+          - 0014001: 중소기업 (8개 정책)
+          - 0014007: 군인 (8개 정책)
+        - matching.py에서 sbiz_cd 필터링 시 사용
+        """
+        valid_conditions = [
+            '신혼', '한부모', '장애', '다자녀', '저소득', '차상위', '기초수급',
+            '중소기업', '군인',  # [BRAIN4-31] 신규 추가
+        ]
         if value:
             if not isinstance(value, list):
                 raise serializers.ValidationError("특수조건은 리스트 형태여야 합니다.")
