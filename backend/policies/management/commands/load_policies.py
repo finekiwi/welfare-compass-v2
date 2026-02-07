@@ -10,14 +10,11 @@ import re
 from datetime import datetime
 from django.core.management.base import BaseCommand
 from policies.models import Policy, Category
-
-
-# =============================================================================
-# [BRAIN4-14] 특수조건 코드 상수
-# =============================================================================
-SBIZ_CODE_LOW_INCOME = '0014003'     # 기초수급자
-SBIZ_CODE_SINGLE_PARENT = '0014004'  # 한부모
-SBIZ_CODE_DISABLED = '0014005'       # 장애인
+from policies.services.matching_keys import (
+    SBIZ_CODE_LOW_INCOME,
+    SBIZ_CODE_SINGLE_PARENT,
+    SBIZ_CODE_DISABLED,
+)
 
 
 # =============================================================================

@@ -3,6 +3,13 @@ from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from policies.models import Category
+from policies.services.matching_keys import (
+    JOB_STATUS_TO_CODE,
+    JOB_STATUS_TO_KOREAN,
+    EDUCATION_STATUS_TO_CODE,
+    MARRIAGE_STATUS_TO_CODE,
+    HOUSING_TYPE_TO_KOREAN,
+)
 
 
 class Profile(models.Model):
@@ -227,6 +234,9 @@ class Profile(models.Model):
             # 특수조건 및 필요분야
             'special_conditions': self.special_conditions or [],
             'needs': self.needs or [],
+
+            # 관심분야 (카테고리명 리스트)
+            'interests': list(self.interests.values_list('name', flat=True)),
         }
     
     # ==========================================================================
@@ -236,81 +246,24 @@ class Profile(models.Model):
     # ==========================================================================
 
     def _convert_job_status(self):
-        """
-        job_status를 한글 값으로 변환 (matching.py 점수 계산용)
-        - 기존 matching.py의 _calc_priority()에서 한글 값으로 비교
-        """
-        mapping = {
-            'employed': '재직',
-            'self_employed': '자영업',   # 신규 추가
-            'unemployed': '무직',
-            'job_seeking': '구직중',
-            'student': '학생',
-            'startup': '창업준비',
-            'freelancer': '프리랜서',
-        }
-        return mapping.get(self.job_status, '')
+        """job_status를 한글 값으로 변환 (matching.py 점수 계산용)"""
+        return JOB_STATUS_TO_KOREAN.get(self.job_status, '')
 
     def _get_job_code(self):
-        """
-        job_status를 API jobCd 코드로 변환
-        - Policy.employment_status에 저장된 코드(0013001 등)와 비교용
-        """
-        mapping = {
-            'employed': '0013001',      # 재직자
-            'self_employed': '0013002', # 자영업자
-            'unemployed': '0013003',    # 미취업자
-            'job_seeking': '0013003',   # 구직중 → 미취업자로 매핑
-            'student': '0013003',       # 학생 → 미취업자로 매핑 (API에 학생 코드 없음)
-            'startup': '0013006',       # (예비)창업자
-            'freelancer': '0013004',    # 프리랜서
-        }
-        return mapping.get(self.job_status, '')
+        """job_status를 API jobCd 코드로 변환"""
+        return JOB_STATUS_TO_CODE.get(self.job_status, '')
 
     def _get_education_code(self):
-        """
-        education_status를 API schoolCd 코드로 변환
-        - Policy.education_status에 저장된 코드(0049001 등)와 비교용
-        """
-        mapping = {
-            'below_high_school': '0049001',      # 고졸 미만
-            'high_school_enrolled': '0049002',   # 고교 재학 (고졸예정 0049003도 매칭에서 포함)
-            'high_school': '0049004',            # 고교 졸업
-            'university_enrolled': '0049005',    # 대학 재학
-            'university_leave': '0049005',       # 대학 휴학 → 대학 재학으로 매핑
-            'university': '0049007',             # 대학 졸업
-            'graduate_school': '0049008',        # 석·박사
-        }
-        return mapping.get(self.education_status, '')
+        """education_status를 API schoolCd 코드로 변환"""
+        return EDUCATION_STATUS_TO_CODE.get(self.education_status, '')
 
     def _get_marriage_code(self):
-        """
-        marriage_status를 API mrgSttsCd 코드로 변환
-        - Policy.marriage_status에 저장된 코드(0055001 등)와 비교용
-        """
-        mapping = {
-            'married': '0055001',  # 기혼
-            'single': '0055002',   # 미혼
-        }
-        return mapping.get(self.marriage_status, '')
+        """marriage_status를 API mrgSttsCd 코드로 변환"""
+        return MARRIAGE_STATUS_TO_CODE.get(self.marriage_status, '')
     
     def _convert_housing_type(self):
-        """
-        housing_type을 한글 값으로 변환 (matching.py 점수 계산용)
-        - [BRAIN4-31] 3개 값으로 단순화
-        - 기존 gosiwon/parents/public/other 값이 DB에 있을 수 있으므로 하위 호환 유지
-        """
-        mapping = {
-            'jeonse': '전세',
-            'monthly': '월세',
-            'owned': '자가',
-            # 하위 호환: 기존 데이터 마이그레이션 전까지 지원
-            'gosiwon': '월세',   # 고시원 → 월세로 취급
-            'parents': '자가',   # 부모님집 → 자가로 취급
-            'public': '월세',    # 공공임대 → 월세로 취급
-            'other': '',         # 기타 → 빈값 (매칭에서 무시)
-        }
-        return mapping.get(self.housing_type, '')
+        """housing_type을 한글 값으로 변환 (matching.py 점수 계산용)"""
+        return HOUSING_TYPE_TO_KOREAN.get(self.housing_type, '')
 
 
 # User 생성 시 자동으로 Profile 생성

@@ -14,6 +14,7 @@ data/chroma_db/
 
 # Raw 정책 데이터 (ETL로 재생성)
 data/raw/*.json
+data/backup_291_policies.json
 
 # 백업 파일
 *_backups.py
