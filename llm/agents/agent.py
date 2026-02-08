@@ -12,6 +12,8 @@
     response = run_agent(agent, "27살인데 월세 지원 받을 수 있어요?")
 """
 
+import sys
+from pathlib import Path
 from typing import Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -66,6 +68,81 @@ def create_agent(
     )
     
     return agent
+
+
+async def create_agent_with_mcp(
+    model: str = "gpt-4o-mini",
+    temperature: float = 0.3,
+    use_short_prompt: bool = False,
+    checkpointer: Optional[MemorySaver] = None,
+    mcp_command: Optional[str] = None,
+    mcp_args: Optional[list[str]] = None,
+):
+    """
+    MCP 경유 모드 Agent 생성.
+
+    - 오케스트레이터는 그대로 두고 (로컬 실행)
+    - rewrite/search/rag 도구는 MCP 서버 도구를 사용
+    - matching 경로(extract_info/check_eligibility)는 로컬 도구 유지
+    """
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+    except ImportError as exc:
+        raise ImportError(
+            "langchain-mcp-adapters 미설치: `uv sync` 후 create_agent_with_mcp()를 사용하세요."
+        ) from exc
+
+    project_root = Path(__file__).resolve().parents[2]
+    server_path = project_root / "llm" / "mcp" / "server.py"
+
+    command = mcp_command or sys.executable
+    args = mcp_args or [str(server_path)]
+
+    mcp_client = MultiServerMCPClient(
+        {
+            "welfare-rag": {
+                "transport": "stdio",
+                "command": command,
+                "args": args,
+            }
+        }
+    )
+    mcp_tools = await mcp_client.get_tools()
+
+    # 로컬 도구 중 rewrite/search는 MCP 도구로 대체
+    local_tools = [
+        tool
+        for tool in ALL_TOOLS
+        if getattr(tool, "name", "") not in {"rewrite_query", "search_policies"}
+    ]
+    tools = [*local_tools, *mcp_tools]
+
+    llm = ChatOpenAI(
+        model=model,
+        temperature=temperature,
+    )
+    system_prompt = (
+        ORCHESTRATOR_SYSTEM_PROMPT_SHORT
+        if use_short_prompt
+        else ORCHESTRATOR_SYSTEM_PROMPT
+    )
+
+    agent = create_react_agent(
+        model=llm,
+        tools=tools,
+        prompt=SystemMessage(content=system_prompt),
+        checkpointer=checkpointer,
+    )
+
+    setattr(agent, "_mcp_client", mcp_client)
+    return agent
+
+
+async def close_agent_mcp(agent) -> None:
+    """create_agent_with_mcp()로 생성한 에이전트의 MCP 클라이언트 종료."""
+    client = getattr(agent, "_mcp_client", None)
+    if client is not None and hasattr(client, "aclose"):
+        await client.aclose()
 
 
 # ============================================================================
