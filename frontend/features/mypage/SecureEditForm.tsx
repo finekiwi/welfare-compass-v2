@@ -68,8 +68,8 @@ export function SecureEditForm() {
             });
 
             // 삭제 성공 → 토큰 삭제 및 메인으로 이동
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("refresh_token");
+            // 토큰은 이제 쿠키로 관리되므로 localStorage 접근 불필요
+            // useAuthStore의 logout이 상태를 초기화함
             alert("회원탈퇴가 완료되었습니다. 이용해주셔서 감사합니다.");
             window.location.href = "/";
         } catch (error: any) {

@@ -17,8 +17,8 @@ export function UserMenu() {
         }
     }, [isInitialized, initialize]);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         router.push("/");
     };
 

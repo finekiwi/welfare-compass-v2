@@ -188,7 +188,7 @@ export async function fetchPolicyDetailById(id: string): Promise<PolicyDetail | 
 export async function fetchPriorityPolicyCards(limit = 8): Promise<PolicyCardItem[]> {
   try {
     const response = await api.get<BackendPolicy[]>("/api/policies/deadline_soon/");
-    const policies = response.data.slice(0, limit).map(toPolicy);
+    const policies = response.data?.slice(0, limit).map(toPolicy) || [];
     return policies.map((p) => ({ ...toCardItem(p), isPriority: true }));
   } catch (error) {
     console.error("fetchPriorityPolicyCards error:", error);
@@ -206,11 +206,11 @@ export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]
     });
 
     // 🛑 RAW 데이터 확인
-    if (response.data.results.length > 0) {
+    if (response.data?.results?.length > 0) {
       console.log("🔥 RAW API Response [0]:", response.data.results[0]);
     }
 
-    return response.data.results.slice(0, limit).map(toPolicy).map(toCardItem);
+    return response.data?.results?.slice(0, limit).map(toPolicy).map(toCardItem) || [];
   } catch (error) {
     console.error("fetchYouthPolicyCards error:", error);
     return [];

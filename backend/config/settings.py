@@ -43,8 +43,17 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
+    'django.contrib.sites',  # allauth 필수
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'dj_rest_auth',
+    'dj_rest_auth.registration',
+
     'django_filters',
     'rest_framework',
+    'rest_framework.authtoken', # dj-rest-auth 필수
     'rest_framework_simplejwt',
     'django_q',  # 비동기 태스크 큐
     'policies',
@@ -63,6 +72,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -143,10 +153,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'accounts.authentication.CookieJWTAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20
+}
+
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'AUTH_COOKIE': 'access_token', # 쿠키 이름 설정
 }
 
 # CORS settings
@@ -154,6 +174,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Frontend URL (for email links)
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 # 온통청년 API
 YOUTH_API_KEY = os.getenv('YOUTH_API_KEY', '')
@@ -183,3 +206,58 @@ Q_CLUSTER = {
     'bulk': 10,
     'orm': 'default',  # 기존 PostgreSQL DB 사용
 }
+
+# Django Allauth & dj-rest-auth Settings
+SITE_ID = 1
+
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
+
+# Custom Adapter 설정
+ACCOUNT_ADAPTER = 'accounts.adapters.CustomAccountAdapter'
+
+# dj-rest-auth 설정
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_COOKIE': 'access_token',
+    'JWT_AUTH_REFRESH_COOKIE': 'refresh_token',
+    'JWT_AUTH_HTTPONLY': True,
+    'JWT_AUTH_SECURE': not DEBUG, # 배포 시 True로 변경 (HTTPS)
+    'JWT_AUTH_SAMESITE': 'Lax',
+    'USER_DETAILS_SERIALIZER': 'accounts.serializers.UserSerializer', # [TODO] 나중에 CustomUserDetailsSerializer로 변경
+    'REGISTER_SERIALIZER': 'accounts.serializers.CustomRegisterSerializer',
+}
+
+# Google OAuth 설정
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': os.environ.get('GOOGLE_CLIENT_ID'),
+            'secret': os.environ.get('GOOGLE_CLIENT_SECRET'),
+            'key': ''
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        }
+    }
+}
+
+# 1. 이메일 인증
+ACCOUNT_EMAIL_VERIFICATION = 'mandatory'  # 이메일 인증 필수 ('optional', 'none', 'mandatory')
+ACCOUNT_EMAIL_REQUIRED = True # [TODO] Deprecated, remove later if ACCOUNT_SIGNUP_FIELDS works well
+# ACCOUNT_SIGNUP_FIELDS = ['email', 'username', 'password'] # New way in recent allauth versions
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True # 이메일 링크 클릭 시 바로 인증 완료 (GET 요청 허용)
+ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 1 # 인증 링크 유효기간 1일
+
+# 2. 계정 잠금 (일반 로그인 시 적용)
+# ACCOUNT_LOGIN_ATTEMPTS_LIMIT (Deprecated) -> ACCOUNT_RATE_LIMITS 사용
+ACCOUNT_RATE_LIMITS = {
+    "login_failed": "5/5m"  # 5분 동안 5회 실패 시 차단
+}
+# ACCOUNT_PREVENT_ENUMERATION = False # (기본값) True 설정 시 "아이디/비번 불일치"로 통일되어 보안성 증가, but 사용자 편의성 감소

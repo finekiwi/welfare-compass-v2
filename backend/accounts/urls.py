@@ -1,17 +1,20 @@
 from django.urls import path
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
+from .views import (
+    ProfileView, ScrapListView, ScrapDetailView, 
+    DeleteAccountView, CheckUsernameView,
+    # FindUsernameView,  <-- config/urls.py로 이동
+    # SignupView, CustomLoginView, CustomRefreshView, LogoutView
 )
-from .views import SignupView, ProfileView, ScrapListView, ScrapDetailView, DeleteAccountView, CheckUsernameView
 
 
 urlpatterns = [
-    # 인증
-    path('signup/', SignupView.as_view(), name='signup'),
+    # 인증 (dj-rest-auth로 대체됨 - /api/auth/...)
+    # path('signup/', SignupView.as_view(), name='signup'),
     path('check-username/', CheckUsernameView.as_view(), name='check-username'),
-    path('login/', TokenObtainPairView.as_view(), name='login'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # path('find-username/', FindUsernameView.as_view(), name='find-username'), # [이동] -> /api/auth/find/username/
+    # path('login/', CustomLoginView.as_view(), name='login'),
+    # path('token/refresh/', CustomRefreshView.as_view(), name='token_refresh'),
+    # path('logout/', LogoutView.as_view(), name='logout'),
     
     # 프로필
     path('profile/', ProfileView.as_view(), name='profile'),

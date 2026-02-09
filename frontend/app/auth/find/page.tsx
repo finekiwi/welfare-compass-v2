@@ -1,0 +1,100 @@
+"use client";
+
+import { useState } from "react";
+import { findUsername, requestPasswordReset } from "@/features/auth/auth.api";
+import Link from "next/link";
+
+type Tab = 'id' | 'password';
+
+export default function FindAccountPage() {
+    const [activeTab, setActiveTab] = useState<Tab>('id');
+    const [email, setEmail] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        setMessage(null);
+
+        try {
+            if (activeTab === 'id') {
+                await findUsername(email);
+                setMessage({ type: 'success', text: "입력하신 이메일로 아이디 정보를 전송했습니다." });
+            } else {
+                await requestPasswordReset(email);
+                setMessage({ type: 'success', text: "입력하신 이메일로 비밀번호 재설정 링크를 전송했습니다." });
+            }
+        } catch (error: any) {
+            console.error(error);
+            setMessage({ type: 'error', text: "요청 처리에 실패했습니다. 잠시 후 다시 시도해주세요." });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="flex min-h-[500px] flex-col items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-lg border bg-white p-8 shadow-sm">
+                <h1 className="mb-6 text-center text-2xl font-bold">계정 찾기</h1>
+
+                {/* 탭 버튼 */}
+                <div className="mb-6 flex border-b">
+                    <button
+                        className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'id'
+                                ? "border-b-2 border-blue-600 text-blue-600"
+                                : "text-gray-500 hover:text-gray-700"
+                            }`}
+                        onClick={() => { setActiveTab('id'); setMessage(null); }}
+                    >
+                        아이디 찾기
+                    </button>
+                    <button
+                        className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'password'
+                                ? "border-b-2 border-blue-600 text-blue-600"
+                                : "text-gray-500 hover:text-gray-700"
+                            }`}
+                        onClick={() => { setActiveTab('password'); setMessage(null); }}
+                    >
+                        비밀번호 찾기
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="mb-1 block text-sm font-medium text-gray-700">이메일</label>
+                        <input
+                            type="email"
+                            required
+                            className="w-full rounded-md border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                            placeholder="가입 시 등록한 이메일 입력"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    </div>
+
+                    {message && (
+                        <div className={`rounded p-3 text-sm ${message.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                            }`}>
+                            {message.text}
+                        </div>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                    >
+                        {loading ? "처리 중..." : (activeTab === 'id' ? "아이디 찾기" : "비밀번호 재설정 메일 발송")}
+                    </button>
+                </form>
+
+                <div className="mt-6 text-center text-xs text-gray-500">
+                    <Link href="/login" className="hover:underline">로그인으로 돌아가기</Link>
+                    <span className="mx-2">|</span>
+                    <Link href="/signup" className="hover:underline">회원가입</Link>
+                </div>
+            </div>
+        </div>
+    );
+}

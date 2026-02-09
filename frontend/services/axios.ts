@@ -11,15 +11,11 @@ export const api = axios.create({
 });
 
 // ✅ Request Interceptor: 요청 보낼 때마다 토큰 자동 주입
+// ✅ Request Interceptor
+// SSR이나 쿠키 인증을 사용할 때는 Authorization 헤더 수동 주입이 필요 없음
+// withCredentials: true 덕분에 브라우저가 알아서 쿠키를 보냄
 api.interceptors.request.use(
   (config) => {
-    // 서버 사이드 렌더링(SSR) 중에는 localStorage 접근 불가하므로 체크
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
-      if (token && config.headers) {
-        config.headers.Authorization = `Bearer ${token}`; // JWT 표준
-      }
-    }
     return config;
   },
   (error) => Promise.reject(error)

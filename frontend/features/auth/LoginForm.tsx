@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "./auth.api";
 import { useAuthStore } from "@/stores/auth.store";
+import { GoogleLoginButton } from "./components/GoogleLoginButton";
 
 /**
  * LoginForm
@@ -89,9 +90,23 @@ export function LoginForm() {
         {loading ? "처리 중..." : "로그인"}
       </button>
 
-      <p className="text-xs text-gray-500">
-        아직 계정이 없나요? <a className="underline" href="/signup">회원가입</a>
-      </p>
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-gray-300" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-white px-2 text-gray-500">Or continue with</span>
+        </div>
+      </div>
+
+      <GoogleLoginButton />
+
+      <div className="flex justify-between items-center text-xs text-gray-500 mt-4">
+        <a className="hover:underline" href="/auth/find">아이디/비밀번호 찾기</a>
+        <p>
+          아직 계정이 없나요? <a className="underline font-medium ml-1" href="/signup">회원가입</a>
+        </p>
+      </div>
     </form>
   );
 }

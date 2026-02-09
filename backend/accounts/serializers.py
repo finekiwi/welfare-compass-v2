@@ -1,8 +1,30 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from dj_rest_auth.registration.serializers import RegisterSerializer
 from policies.serializers import PolicyListSerializer
 from .models import Profile, Scrap
+
+
+class CustomRegisterSerializer(RegisterSerializer):
+    """
+    dj-rest-auth 회원가입 시 프로필 자동 생성을 위한 Serializer
+    """
+    email_notification_consent = serializers.BooleanField(required=False, default=False)
+
+    def save(self, request):
+        user = super().save(request)
+        
+        # 프로필 생성
+        profile, created = Profile.objects.get_or_create(user=user)
+        
+        # 알림 동의 처리
+        if self.data.get('email_notification_consent'):
+            profile.email_notification_enabled = True
+            profile.notification_email = user.email
+            profile.save()
+            
+        return user
 
 
 class UserSerializer(serializers.ModelSerializer):
