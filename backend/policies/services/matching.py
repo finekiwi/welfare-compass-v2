@@ -13,6 +13,16 @@
 import re
 from django.db.models import Q
 from policies.models import Policy
+from policies.services.matching_keys import (
+    SBIZ_CODE_SME,
+    SBIZ_CODE_MILITARY,
+    RESTRICTION_CODE_JOB,
+    RESTRICTION_CODE_EDUCATION,
+    RESTRICTION_CODE_MARRIAGE,
+    EDUCATION_ALSO_MATCH,
+    CHATBOT_TOP_K,
+    normalize_user_info,
+)
 
 
 # =============================================================================
@@ -40,14 +50,11 @@ def match_policies_for_web(profile, exclude_policy_ids=None, include_category=No
     return _match_policies_core(user_info, exclude_policy_ids, include_category, limit=None)
 
 
-def match_policies_for_chatbot(user_info: dict, top_k: int = 5):
+def match_policies_for_chatbot(user_info: dict, top_k: int = CHATBOT_TOP_K):
     """
     챗봇용 정책 매칭 - 상위 N개만 반환
 
-    [BRAIN4-31] 신규 함수
-    - 챗봇 대화에서 사용 (회원/비회원 모두)
-    - dict 형태의 user_info 직접 입력 (Profile 객체 불필요)
-    - 상위 N개만 반환하여 응답 간결하게 유지
+    [BRAIN4-34] top_k 기본값 CHATBOT_TOP_K(2)로 변경
 
     Args:
         user_info: 사용자 정보 dict (Profile.to_matching_dict() 형식)
@@ -55,7 +62,7 @@ def match_policies_for_chatbot(user_info: dict, top_k: int = 5):
             선택: employment_status, job_code, education_code, marriage_code,
                   housing_type, income, household_size, has_children,
                   children_ages, special_conditions, needs
-        top_k: 반환할 최대 정책 수 (기본값 5)
+        top_k: 반환할 최대 정책 수 (기본값 2)
 
     Returns:
         list of (Policy, score) tuples - 상위 top_k개
@@ -105,6 +112,9 @@ def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_categ
     Returns:
         list of (Policy, score) tuples
     """
+    # [BRAIN4-34] 특수조건 alias 정규화
+    user_info = normalize_user_info(user_info)
+
     # Step 1: Django ORM으로 기본 필터링
     queryset = _apply_base_filters(user_info, exclude_policy_ids, include_category)
 
@@ -177,7 +187,7 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
         queryset = queryset.filter(
             Q(employment_status='') |
             Q(employment_status__isnull=True) |
-            Q(employment_status__contains='0013010') |  # 제한없음
+            Q(employment_status__contains=RESTRICTION_CODE_JOB) |  # 제한없음
             Q(employment_status__contains=job_code)
         )
 
@@ -187,22 +197,16 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
     # =========================================================================
     education_code = user_info.get('education_code', '')
     if education_code:
-        if education_code == '0049002':
-            # 고교 재학 → 고졸예정(0049003) 정책도 포함
-            queryset = queryset.filter(
-                Q(education_status='') |
-                Q(education_status__isnull=True) |
-                Q(education_status__contains='0049010') |  # 제한없음
-                Q(education_status__contains=education_code) |
-                Q(education_status__contains='0049003')  # 고졸예정
-            )
-        else:
-            queryset = queryset.filter(
-                Q(education_status='') |
-                Q(education_status__isnull=True) |
-                Q(education_status__contains='0049010') |  # 제한없음
-                Q(education_status__contains=education_code)
-            )
+        q = (
+            Q(education_status='') |
+            Q(education_status__isnull=True) |
+            Q(education_status__contains=RESTRICTION_CODE_EDUCATION) |
+            Q(education_status__contains=education_code)
+        )
+        # [BRAIN4-34] 추가 매칭 코드 (고교재학→고졸예정, 대학재학→대졸예정)
+        for also_code in EDUCATION_ALSO_MATCH.get(education_code, []):
+            q |= Q(education_status__contains=also_code)
+        queryset = queryset.filter(q)
 
     # =========================================================================
     # [BRAIN4-31] 결혼 상태 필터링 (mrgSttsCd)
@@ -212,7 +216,7 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
         queryset = queryset.filter(
             Q(marriage_status='') |
             Q(marriage_status__isnull=True) |
-            Q(marriage_status__contains='0055003') |  # 제한없음
+            Q(marriage_status__contains=RESTRICTION_CODE_MARRIAGE) |  # 제한없음
             Q(marriage_status__contains=marriage_code)
         )
 
@@ -223,11 +227,6 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
 # [BRAIN4-14] 특수조건 필터링 - 텍스트 파싱 → Boolean 필드 기반
 # [BRAIN4-31] 중소기업/군인 특수조건 추가
 # =============================================================================
-
-# [BRAIN4-31] sbizCd 코드 상수
-SBIZ_CODE_SME = '0014001'       # 중소기업
-SBIZ_CODE_MILITARY = '0014007'  # 군인
-
 
 def _check_special_conditions(policy, user_info):
     """
@@ -241,43 +240,38 @@ def _check_special_conditions(policy, user_info):
     - 중소기업(0014001), 군인(0014007) 특수조건 필터링
     - sbiz_cd 필드에서 직접 코드 체크 (Boolean 필드 없음)
     """
-    user_special = [s.lower() for s in user_info.get('special_conditions', [])]
+    # [BRAIN4-34] 정규화 후이므로 canonical 값만 비교
+    user_special = user_info.get('special_conditions', [])
 
     # 한부모 전용 정책 (sbizCd: 0014004)
     if policy.is_for_single_parent:
-        if not any('한부모' in s for s in user_special):
+        if '한부모' not in user_special:
             return False
 
     # 장애인 전용 정책 (sbizCd: 0014005)
     if policy.is_for_disabled:
-        if not any(s in ['장애', '장애인'] for s in user_special):
+        if '장애' not in user_special:
             return False
 
     # 기초수급자 전용 정책 (sbizCd: 0014003)
     if policy.is_for_low_income:
-        if not any(s in ['기초수급', '기초수급자', '수급자'] for s in user_special):
+        if '기초수급' not in user_special:
             return False
 
     # 신혼부부 전용 정책 (텍스트 파싱 - API 코드 없음)
     if policy.is_for_newlywed:
-        if not any('신혼' in s for s in user_special):
+        if '신혼' not in user_special:
             return False
 
-    # =========================================================================
-    # [BRAIN4-31] 중소기업/군인 전용 정책 (sbiz_cd에서 직접 체크)
-    # - Boolean 필드 없이 sbiz_cd 코드로 판단
-    # - 8개 정책이 중소기업, 8개 정책이 군인 조건 보유
-    # =========================================================================
+    # 중소기업/군인 전용 정책 (sbiz_cd 코드)
     policy_sbiz = policy.sbiz_cd or ''
 
-    # 중소기업 전용 정책
     if SBIZ_CODE_SME in policy_sbiz:
-        if not any('중소기업' in s for s in user_special):
+        if '중소기업' not in user_special:
             return False
 
-    # 군인 전용 정책
     if SBIZ_CODE_MILITARY in policy_sbiz:
-        if not any('군인' in s for s in user_special):
+        if '군인' not in user_special:
             return False
 
     # 1인가구 체크 (별도 Boolean 필드 없음 - 텍스트 기반 유지)
@@ -308,6 +302,9 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     Returns:
         bool: 매칭 여부
     """
+    # [BRAIN4-34] 특수조건 alias 정규화
+    user_info = normalize_user_info(user_info)
+
     # 1. 나이 체크
     user_age = user_info.get('age')
     if user_age is not None:
@@ -329,8 +326,7 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     job_code = user_info.get('job_code', '')
     policy_job = policy.employment_status or ''
     if job_code and policy_job:
-        # 제한없음(0013010)이 아니고, 사용자 코드가 포함되지 않으면 제외
-        if '0013010' not in policy_job and job_code not in policy_job:
+        if RESTRICTION_CODE_JOB not in policy_job and job_code not in policy_job:
             return False
 
     # =========================================================================
@@ -339,13 +335,10 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     education_code = user_info.get('education_code', '')
     policy_edu = policy.education_status or ''
     if education_code and policy_edu:
-        # 제한없음(0049010)이 아니면 체크
-        if '0049010' not in policy_edu:
-            # 고교재학(0049002)은 고졸예정(0049003)도 매칭
-            if education_code == '0049002':
-                if education_code not in policy_edu and '0049003' not in policy_edu:
-                    return False
-            elif education_code not in policy_edu:
+        if RESTRICTION_CODE_EDUCATION not in policy_edu:
+            # [BRAIN4-34] 추가 매칭 코드 동적 처리
+            also_codes = EDUCATION_ALSO_MATCH.get(education_code, [])
+            if education_code not in policy_edu and not any(c in policy_edu for c in also_codes):
                 return False
 
     # =========================================================================
@@ -354,8 +347,7 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     marriage_code = user_info.get('marriage_code', '')
     policy_mrg = policy.marriage_status or ''
     if marriage_code and policy_mrg:
-        # 제한없음(0055003)이 아니고, 사용자 코드가 포함되지 않으면 제외
-        if '0055003' not in policy_mrg and marriage_code not in policy_mrg:
+        if RESTRICTION_CODE_MARRIAGE not in policy_mrg and marriage_code not in policy_mrg:
             return False
 
     # 4. 특수조건 체크 (한부모, 장애인, 수급자, 신혼, 중소기업, 군인 등)
@@ -417,7 +409,7 @@ def _get_relevant_categories(user_info):
 
     # 특수조건 맥락
     special = user_info.get('special_conditions', [])
-    if any(s in ['한부모', '장애인', '장애'] for s in special):
+    if any(s in ['한부모', '장애'] for s in special):
         relevant.append('취약계층 및 금융지원')
         relevant.append('건강')  # 신규 추가
 

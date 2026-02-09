@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from dj_rest_auth.registration.serializers import RegisterSerializer
 from policies.serializers import PolicyListSerializer
+from policies.services.matching_keys import VALID_SPECIAL_CONDITIONS
 from .models import Profile, Scrap
 
 
@@ -108,17 +109,13 @@ class ProfileSerializer(serializers.ModelSerializer):
           - 0014007: 군인 (8개 정책)
         - matching.py에서 sbiz_cd 필터링 시 사용
         """
-        valid_conditions = [
-            '신혼', '한부모', '장애', '다자녀', '저소득', '차상위', '기초수급',
-            '중소기업', '군인',  # [BRAIN4-31] 신규 추가
-        ]
         if value:
             if not isinstance(value, list):
                 raise serializers.ValidationError("특수조건은 리스트 형태여야 합니다.")
             for cond in value:
-                if cond not in valid_conditions:
+                if cond not in VALID_SPECIAL_CONDITIONS:
                     raise serializers.ValidationError(
-                        f"유효하지 않은 특수조건: {cond}. 가능한 값: {valid_conditions}"
+                        f"유효하지 않은 특수조건: {cond}. 가능한 값: {VALID_SPECIAL_CONDITIONS}"
                     )
         return value
 
