@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { findUsername, requestPasswordReset } from "@/features/auth/auth.api";
 import Link from "next/link";
+import ReCAPTCHA from "react-google-recaptcha";
 
 type Tab = 'id' | 'password';
 
@@ -11,23 +12,34 @@ export default function FindAccountPage() {
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const recaptchaRef = useRef<ReCAPTCHA>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        const token = recaptchaRef.current?.getValue();
+        if (!token) {
+            setMessage({ type: 'error', text: "로봇이 아님을 증명해주세요." });
+            return;
+        }
+
         setLoading(true);
         setMessage(null);
 
         try {
             if (activeTab === 'id') {
-                await findUsername(email);
+                await findUsername(email, token);
                 setMessage({ type: 'success', text: "입력하신 이메일로 아이디 정보를 전송했습니다." });
             } else {
-                await requestPasswordReset(email);
+                await requestPasswordReset(email, token);
                 setMessage({ type: 'success', text: "입력하신 이메일로 비밀번호 재설정 링크를 전송했습니다." });
             }
+            recaptchaRef.current?.reset();
         } catch (error: any) {
             console.error(error);
-            setMessage({ type: 'error', text: "요청 처리에 실패했습니다. 잠시 후 다시 시도해주세요." });
+            const errorMsg = error.response?.data?.error || "요청 처리에 실패했습니다. 잠시 후 다시 시도해주세요.";
+            setMessage({ type: 'error', text: errorMsg });
+            recaptchaRef.current?.reset();
         } finally {
             setLoading(false);
         }
@@ -42,8 +54,8 @@ export default function FindAccountPage() {
                 <div className="mb-6 flex border-b">
                     <button
                         className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'id'
-                                ? "border-b-2 border-blue-600 text-blue-600"
-                                : "text-gray-500 hover:text-gray-700"
+                            ? "border-b-2 border-blue-600 text-blue-600"
+                            : "text-gray-500 hover:text-gray-700"
                             }`}
                         onClick={() => { setActiveTab('id'); setMessage(null); }}
                     >
@@ -51,8 +63,8 @@ export default function FindAccountPage() {
                     </button>
                     <button
                         className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'password'
-                                ? "border-b-2 border-blue-600 text-blue-600"
-                                : "text-gray-500 hover:text-gray-700"
+                            ? "border-b-2 border-blue-600 text-blue-600"
+                            : "text-gray-500 hover:text-gray-700"
                             }`}
                         onClick={() => { setActiveTab('password'); setMessage(null); }}
                     >
@@ -70,6 +82,13 @@ export default function FindAccountPage() {
                             placeholder="가입 시 등록한 이메일 입력"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="flex justify-center">
+                        <ReCAPTCHA
+                            ref={recaptchaRef}
+                            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
                         />
                     </div>
 

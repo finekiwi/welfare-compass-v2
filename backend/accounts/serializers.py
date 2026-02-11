@@ -13,6 +13,12 @@ class CustomRegisterSerializer(RegisterSerializer):
     """
     email_notification_consent = serializers.BooleanField(required=False, default=False)
 
+    def validate_email(self, email):
+        """이메일 중복 확인"""
+        if email and User.objects.filter(email=email).exists():
+            raise serializers.ValidationError("이미 가입된 이메일입니다.")
+        return email
+
     def save(self, request):
         user = super().save(request)
         

@@ -5,7 +5,18 @@ import { loginWithGoogle } from "../auth.api";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth.store";
 
-export function GoogleLoginButton() {
+export default function GoogleLoginButton() {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+    // Client ID가 없으면 버튼 자체를 렌더링하지 않음 (Hook 실행 방지)
+    if (!clientId) {
+        return null; // 또는 대체 UI (예: "로그인 설정 필요")
+    }
+
+    return <GoogleLoginButtonContent />;
+}
+
+function GoogleLoginButtonContent() {
     const router = useRouter();
     const login = useAuthStore((state) => state.login);
 

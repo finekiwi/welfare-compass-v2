@@ -56,15 +56,15 @@ export async function verifyEmail(key: string): Promise<void> {
 /**
  * ✅ 아이디 찾기 API (이메일 발송)
  */
-export async function findUsername(email: string): Promise<void> {
-  await api.post("/api/auth/find/username/", { email });
+export async function findUsername(email: string, recaptchaToken?: string | null): Promise<void> {
+  await api.post("/api/auth/find/username/", { email, recaptchaToken });
 }
 
 /**
  * ✅ 비밀번호 재설정 요청 (이메일 발송)
  */
-export async function requestPasswordReset(email: string): Promise<void> {
-  await api.post("/api/auth/password/reset/", { email });
+export async function requestPasswordReset(email: string, recaptchaToken?: string | null): Promise<void> {
+  await api.post("/api/auth/password/reset/", { email, recaptchaToken });
 }
 
 /**

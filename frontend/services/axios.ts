@@ -11,11 +11,20 @@ export const api = axios.create({
 });
 
 // ✅ Request Interceptor: 요청 보낼 때마다 토큰 자동 주입
-// ✅ Request Interceptor
-// SSR이나 쿠키 인증을 사용할 때는 Authorization 헤더 수동 주입이 필요 없음
-// withCredentials: true 덕분에 브라우저가 알아서 쿠키를 보냄
+// ✅ Request Interceptor: 요청 보낼 때마다 토큰/CSRF 자동 주입
 api.interceptors.request.use(
   (config) => {
+    // CSRF 토큰 자동 주입 (쿠키에서 읽어서 헤더에 추가)
+    if (typeof document !== "undefined") {
+      const csrfToken = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("csrftoken="))
+        ?.split("=")[1];
+
+      if (csrfToken) {
+        config.headers["X-CSRFToken"] = csrfToken;
+      }
+    }
     return config;
   },
   (error) => Promise.reject(error)

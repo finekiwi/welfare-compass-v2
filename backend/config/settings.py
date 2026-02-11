@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'chat',
     'etl',
     'notifications',
+    'axes',  # 계정 잠금 (로그인 실패 제한)
 ]
 
 MIDDLEWARE = [
@@ -73,6 +74,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    'axes.middleware.AxesMiddleware',  # 계정 잠금 미들웨어 (맨 뒤)
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -175,6 +177,13 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Settings
+CSRF_COOKIE_HTTPONLY = False  # 클라이언트(JS)에서 쿠키 읽기 허용 (X-CSRFToken 헤더 전송용)
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+]
+
 # Frontend URL (for email links)
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
@@ -207,10 +216,18 @@ Q_CLUSTER = {
     'orm': 'default',  # 기존 PostgreSQL DB 사용
 }
 
+# DRF 설정
+REST_FRAMEWORK = {
+    'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 12,
+}
+
 # Django Allauth & dj-rest-auth Settings
 SITE_ID = 1
 
 AUTHENTICATION_BACKENDS = (
+    'axes.backends.AxesBackend',  # django-axes (맨 앞, 잠금 여부 먼저 확인)
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 )
@@ -251,13 +268,44 @@ SOCIALACCOUNT_PROVIDERS = {
 # 1. 이메일 인증
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'  # 이메일 인증 필수 ('optional', 'none', 'mandatory')
 ACCOUNT_EMAIL_REQUIRED = True # [TODO] Deprecated, remove later if ACCOUNT_SIGNUP_FIELDS works well
-# ACCOUNT_SIGNUP_FIELDS = ['email', 'username', 'password'] # New way in recent allauth versions
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True # 이메일 링크 클릭 시 바로 인증 완료 (GET 요청 허용)
 ACCOUNT_EMAIL_CONFIRMATION_EXPIRE_DAYS = 1 # 인증 링크 유효기간 1일
 
-# 2. 계정 잠금 (일반 로그인 시 적용)
-# ACCOUNT_LOGIN_ATTEMPTS_LIMIT (Deprecated) -> ACCOUNT_RATE_LIMITS 사용
-ACCOUNT_RATE_LIMITS = {
-    "login_failed": "5/5m"  # 5분 동안 5회 실패 시 차단
+# [추가] 소셜 로그인 시 기존 이메일 계정과 자동 연결 허용
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+
+# 2. 계정 잠금 (django-axes)
+# allauth의 ACCOUNT_RATE_LIMITS는 dj-rest-auth 엔드포인트에 미적용되므로,
+# 인증 백엔드 레벨에서 동작하는 django-axes를 사용합니다.
+AXES_FAILURE_LIMIT = 5                          # 5회 실패 시 차단
+AXES_COOLOFF_TIME = timedelta(minutes=5)        # 5분 후 자동 해제
+AXES_LOCKOUT_PARAMETERS = ['username']          # username 기준 잠금 (IP 아닌 계정 단위)
+AXES_RESET_ON_SUCCESS = True                    # 로그인 성공 시 실패 횟수 초기화
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
 }
-# ACCOUNT_PREVENT_ENUMERATION = False # (기본값) True 설정 시 "아이디/비번 불일치"로 통일되어 보안성 증가, but 사용자 편의성 감소

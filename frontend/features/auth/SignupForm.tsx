@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signup } from "./auth.api";
 import { api } from "@/services/axios";
-import { GoogleLoginButton } from "./components/GoogleLoginButton";
+import GoogleLoginButton from "./components/GoogleLoginButton";
 
 /**
  * SignupForm
@@ -216,7 +216,12 @@ export function SignupForm() {
 
         // 2. Email Error
         if (errorData.email) {
-          newErrors.email = `❌ ${errorData.email[0]}`;
+          const msg = errorData.email[0];
+          if (msg.includes("already exists") || msg.includes("이미 가입된")) {
+            newErrors.email = "❌ 이미 가입된 이메일입니다.";
+          } else {
+            newErrors.email = `❌ ${msg}`;
+          }
         }
 
         // 3. Password Error (password1 확인)

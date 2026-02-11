@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "./auth.api";
 import { useAuthStore } from "@/stores/auth.store";
-import { GoogleLoginButton } from "./components/GoogleLoginButton";
+import GoogleLoginButton from "./components/GoogleLoginButton";
 
 /**
  * LoginForm
@@ -46,9 +46,15 @@ export function LoginForm() {
           setError("❌ 아이디 또는 비밀번호가 일치하지 않습니다.");
         }
       } else if (err.response?.status === 400) {
-        setError("❌ 입력 정보를 다시 확인해주세요.");
+        // [수정] 400 에러 중 non_field_errors(로그인 실패)인 경우 문구 변경
+        const data = err.response?.data;
+        if (data && data.non_field_errors) {
+          setError("❌ 회원가입 정보가 없습니다.");
+        } else {
+          setError("❌ 입력 정보를 다시 확인해주세요.");
+        }
       } else {
-        setError("❌ 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        setError("❌ 로그인에 실패했습니다. 5분 후 다시 시도해주세요.");
       }
     } finally {
       setLoading(false);

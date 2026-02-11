@@ -9,6 +9,7 @@ from .serializers import UserSerializer, ProfileSerializer, ScrapSerializer
 from .models import Profile, Scrap
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+import os # [추가] 환경변수 접근용
 from django.conf import settings
 
 # Google Login Imports
@@ -21,6 +22,94 @@ from django.core.mail import send_mail
 from django.conf import settings
 from rest_framework.views import APIView
 
+# [추가] 계정 잠금 (dj-rest-auth LoginView 커스텀)
+from dj_rest_auth.views import LoginView as DjRestAuthLoginView
+from axes.models import AccessAttempt
+from django.utils import timezone
+from datetime import timedelta
+
+
+class AxesLockedLoginView(DjRestAuthLoginView):
+    """
+    dj-rest-auth LoginView + 계정 잠금
+
+    dj-rest-auth의 LoginSerializer는 내부적으로 인증 실패를 처리(400)하므로,
+    django-axes의 인증 백엔드가 실패를 감지하지 못합니다.
+
+    이 뷰는 직접 AccessAttempt 테이블을 관리합니다:
+    1. 로그인 전: 잠금 상태 확인 → 잠김이면 403 반환
+    2. 로그인 실패 시: 실패 횟수 +1 기록 → 한도 도달 시 403 반환
+    3. 로그인 성공 시: 실패 기록 초기화
+    """
+
+    def _get_lockout_config(self):
+        cooloff = getattr(settings, 'AXES_COOLOFF_TIME', timedelta(minutes=5))
+        limit = getattr(settings, 'AXES_FAILURE_LIMIT', 5)
+        return cooloff, limit
+
+    def _is_locked(self, username):
+        """username이 잠금 상태인지 확인"""
+        cooloff, limit = self._get_lockout_config()
+        threshold = timezone.now() - cooloff
+        return AccessAttempt.objects.filter(
+            username=username,
+            failures_since_start__gte=limit,
+            attempt_time__gte=threshold,
+        ).exists()
+
+    def _record_failure(self, request, username):
+        """로그인 실패 기록"""
+        ip = self._get_client_ip(request)
+        attempt, created = AccessAttempt.objects.get_or_create(
+            username=username,
+            defaults={
+                'ip_address': ip,
+                'user_agent': request.META.get('HTTP_USER_AGENT', '')[:255],
+                'attempt_time': timezone.now(),
+                'failures_since_start': 1,
+            }
+        )
+        if not created:
+            attempt.failures_since_start += 1
+            attempt.attempt_time = timezone.now()
+            attempt.save(update_fields=['failures_since_start', 'attempt_time'])
+        return attempt.failures_since_start
+
+    def _reset_failures(self, username):
+        """로그인 성공 시 실패 기록 초기화"""
+        AccessAttempt.objects.filter(username=username).delete()
+
+    def _get_client_ip(self, request):
+        xff = request.META.get('HTTP_X_FORWARDED_FOR')
+        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR', '')
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username', '')
+
+        if username and self._is_locked(username):
+            return Response(
+                {"error": "로그인 시도가 너무 많습니다. 5분 후 다시 시도해주세요."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        response = super().post(request, *args, **kwargs)
+
+        if username:
+            if response.status_code == 400:
+                # 로그인 실패 → 실패 횟수 기록
+                _, limit = self._get_lockout_config()
+                failures = self._record_failure(request, username)
+                if failures >= limit:
+                    return Response(
+                        {"error": "로그인 시도가 너무 많습니다. 5분 후 다시 시도해주세요."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+            elif response.status_code == 200:
+                # 로그인 성공 → 실패 기록 초기화
+                self._reset_failures(username)
+
+        return response
+
 class GoogleLogin(SocialLoginView):
     """
     구글 로그인 API
@@ -29,8 +118,16 @@ class GoogleLogin(SocialLoginView):
     백엔드가 구글과 통신하여 제 3자 인증을 완료하고 JWT 토큰을 발급합니다.
     """
     adapter_class = GoogleOAuth2Adapter
-    callback_url = "http://localhost:3000/api/auth/callback/google" # 프론트엔드 콜백 URL과 일치해야 함
+    callback_url = "postmessage" # 프론트엔드 Popup Flow(postmessage) 사용 시 필수
     client_class = OAuth2Client
+
+    def post(self, request, *args, **kwargs):
+        print("DEBUG: GoogleLogin POST received")
+        try:
+            return super().post(request, *args, **kwargs)
+        except Exception as e:
+            print(f"DEBUG: GoogleLogin Exception: {e}")
+            return Response({"error": str(e), "detail": "Google Login Failed"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # class SignupView(generics.CreateAPIView):
@@ -299,50 +396,107 @@ class DeleteAccountView(generics.GenericAPIView):
 #         return response
 
 
+import requests
+from dj_rest_auth.views import PasswordResetView # [추가] 부모 클래스 임포트
+
+def verify_recaptcha(token):
+    """Google reCAPTCHA v2 검증"""
+    secret_key = os.environ.get('RECAPTCHA_SECRET_KEY')
+    # 키가 설정되지 않았으면 검증 패스 (개발 편의성)
+    if not secret_key:
+        return True
+        
+    if not token:
+        return False
+        
+    data = {
+        'secret': secret_key,
+        'response': token
+    }
+    try:
+        response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=data)
+        result = response.json()
+        return result.get('success', False)
+    except Exception:
+        return False
+
+class CustomPasswordResetView(PasswordResetView):
+    """
+    비밀번호 재설정 API (이메일 존재 여부 확인 + reCAPTCHA 추가)
+    """
+    def post(self, request, *args, **kwargs):
+        # 0. reCAPTCHA 검증
+        token = request.data.get('recaptchaToken')
+        if not verify_recaptcha(token):
+            return Response({"error": "로봇이 아님을 증명해주세요."}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = request.data.get('email')
+        
+        # 이메일 존재 여부 확인
+        if not User.objects.filter(email=email).exists():
+            return Response(
+                {"error": "해당 이메일로 가입된 정보가 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        return super().post(request, *args, **kwargs)
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 class FindUsernameView(APIView):
-    """
-    아이디 찾기 API
-    POST /api/accounts/find-username/
-    Body: { "email": "user@example.com" }
-    """
-    permission_classes = [AllowAny]
+    # ... (header remains same)
 
     def post(self, request):
-        print("DEBUG: FindUsernameView POST received")
+        # 0. reCAPTCHA 검증
+        token = request.data.get('recaptchaToken')
+        if not verify_recaptcha(token):
+            return Response({"error": "로봇이 아님을 증명해주세요."}, status=status.HTTP_400_BAD_REQUEST)
+
         email = request.data.get('email')
-        print(f"DEBUG: Email received: {email}")
         
         if not email:
             return Response({"error": "이메일을 입력해주세요."}, status=status.HTTP_400_BAD_REQUEST)
 
         # 1. 이메일로 유저 찾기
         users = User.objects.filter(email=email)
-        print(f"DEBUG: Users found: {users.count()}")
         
-        if users.exists():
-            # 2. 유저가 존재하면 이메일 발송
-            user = users.first()
-            subject = "[복지나침반] 아이디 찾기 결과입니다."
-            message = f"회원님의 아이디는 '{user.username}' 입니다."
+        if not users.exists():
+            return Response(
+                {"error": "해당 이메일로 가입된 정보가 없습니다."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 2. 유저가 존재하면 이메일 발송
+        user = users.first()
+        subject = "[복지나침반] 아이디 찾기 결과입니다."
+        message = f"회원님의 아이디는 '{user.username}' 입니다."
+        
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [email],
+                fail_silently=False,
+            )
+            # 이메일 마스킹 로직
+            masked_email = email
+            if '@' in email:
+                local, domain = email.split('@')
+                if len(local) > 3:
+                    masked_email = f"{local[:3]}***@{domain}"
+                else:
+                    masked_email = f"{local}***@{domain}"
             
-            try:
-                print("DEBUG: Sending email...")
-                send_mail(
-                    subject,
-                    message,
-                    settings.DEFAULT_FROM_EMAIL,
-                    [email],
-                    fail_silently=False,
-                )
-                print("DEBUG: Email sent successfully")
-            except Exception as e:
-                # 로그 남기기 (실제 운영 시)
-                print(f"DEBUG: Email send failed: {e}")
-                pass
-        else:
-            print("DEBUG: User not found with this email")
+            logger.info(f"아이디 찾기 이메일 발송 성공: {masked_email}")
+
+        except Exception as e:
+            logger.error(f"이메일 발송 실패: {e}")
+            pass
         
-        # 3. 보안을 위해 유저 존재 여부와 상관없이 성공 메시지 반환
         return Response(
             {"message": "입력하신 이메일로 아이디 정보를 전송했습니다."},
             status=status.HTTP_200_OK
