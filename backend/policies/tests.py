@@ -104,3 +104,61 @@ class TestCodeMappingCompleteness(TestCase):
     def test_all_housing_types_have_korean(self):
         for value, label in Profile.HOUSING_TYPE_CHOICES:
             self.assertIn(value, HOUSING_TYPE_TO_KOREAN, f"Missing korean: {value}")
+
+
+# =============================================================================
+# [BRAIN4-37 C01] Known Code Registry 테스트
+# =============================================================================
+from policies.services.matching_keys import (
+    KNOWN_EDUCATION_CODES,
+    KNOWN_JOB_CODES,
+    parse_code_string,
+    has_unknown_codes,
+    extract_known_only,
+)
+
+
+class TestParseCodeString(TestCase):
+    """parse_code_string 유틸 테스트"""
+
+    def test_comma_separated(self):
+        self.assertEqual(parse_code_string('0013001, 0013003'), {'0013001', '0013003'})
+
+    def test_none_returns_empty(self):
+        self.assertEqual(parse_code_string(None), set())
+
+    def test_empty_string_returns_empty(self):
+        self.assertEqual(parse_code_string(''), set())
+
+    def test_single_code(self):
+        self.assertEqual(parse_code_string('0049010'), {'0049010'})
+
+    def test_range_expression(self):
+        result = parse_code_string('0013001~0013003')
+        self.assertEqual(result, {'0013001', '0013002', '0013003'})
+
+
+class TestHasUnknownCodes(TestCase):
+    """has_unknown_codes 유틸 테스트"""
+
+    def test_known_only_returns_false(self):
+        self.assertFalse(has_unknown_codes('0013001,0013003', KNOWN_JOB_CODES))
+
+    def test_unknown_present_returns_true(self):
+        self.assertTrue(has_unknown_codes('0013001,0013009', KNOWN_JOB_CODES))
+
+    def test_none_returns_false(self):
+        self.assertFalse(has_unknown_codes(None, KNOWN_JOB_CODES))
+
+
+class TestExtractKnownOnly(TestCase):
+    """extract_known_only 유틸 테스트"""
+
+    def test_removes_unknown(self):
+        self.assertEqual(extract_known_only('0013001,0013009', KNOWN_JOB_CODES), '0013001')
+
+    def test_all_known_unchanged(self):
+        self.assertEqual(extract_known_only('0013001,0013003', KNOWN_JOB_CODES), '0013001,0013003')
+
+    def test_all_unknown_returns_empty(self):
+        self.assertEqual(extract_known_only('0013009', KNOWN_JOB_CODES), '')

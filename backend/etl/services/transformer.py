@@ -13,6 +13,7 @@ from datetime import datetime, date
 from typing import Optional, Any, Tuple
 from dataclasses import dataclass
 from django.utils import timezone
+from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,15 @@ class PolicyTransformer:
         normalized_support_content = self._normalize_text_years(raw.get('plcySprtCn', ''))
         normalized_apply_method = self._normalize_text_years(raw.get('plcyAplyMthdCn', ''))
 
+        # [BRAIN4-37 C02] 정책별 override 적용
+        override_fields, _logs = apply_overrides(
+            raw['plcyNo'],
+            {
+                'education_status': raw.get('schoolCd', ''),
+                'employment_status': raw.get('jobCd', ''),
+            },
+        )
+
         return TransformedPolicy(
             policy_id=raw['plcyNo'],  # [RENAME] plcy_no → policy_id
             title=normalized_title,  # [RENAME] plcy_nm → title
@@ -141,8 +151,8 @@ class PolicyTransformer:
             income_min=self._parse_int(raw.get('earnMinAmt')),  # [RENAME] earn_min_amt → income_min
             income_max=self._parse_int(raw.get('earnMaxAmt')),  # [RENAME] earn_max_amt → income_max
             marriage_status=raw.get('mrgSttsCd', ''),  # [RENAME] mrg_stts_cd → marriage_status
-            employment_status=raw.get('jobCd', ''),  # [RENAME] job_cd → employment_status
-            education_status=raw.get('schoolCd', ''),  # [RENAME] school_cd → education_status
+            employment_status=override_fields['employment_status'],
+            education_status=override_fields['education_status'],
 
             apply_start_date=aply_start,  # [RENAME] aply_start_dt → apply_start_date
             apply_end_date=aply_end,  # [RENAME] aply_end_dt → apply_end_date

@@ -85,3 +85,48 @@ class PolicyTransformerDistrictTests(SimpleTestCase):
     def test_all_25_districts_mapped(self):
         """25개 구 코드가 전부 매핑되어 있는지"""
         self.assertEqual(len(ZIPCD_TO_DISTRICT), 25)
+
+
+# =============================================================================
+# [BRAIN4-37 C02] Override 적용 테스트
+# =============================================================================
+from unittest.mock import patch
+
+
+class PolicyOverrideTests(SimpleTestCase):
+    """override 적용/미적용 테스트"""
+
+    def test_no_override_returns_unchanged(self):
+        """override 없는 정책 → 값 불변"""
+        from etl.services.overrides import apply_overrides
+        fields = {'education_status': '0049009', 'employment_status': '0013009'}
+        updated, logs = apply_overrides('NO_SUCH_POLICY', fields)
+        self.assertEqual(updated, fields)
+        self.assertEqual(logs, [])
+
+    @patch.dict('etl.services.overrides.POLICY_FIELD_OVERRIDES', {
+        'TEST_POLICY': {'education_status': '0049010'},
+    }, clear=True)
+    def test_override_applied(self):
+        """override 있는 정책 → 기대값 반영"""
+        from etl.services.overrides import apply_overrides
+        fields = {'education_status': '0049009', 'employment_status': '0013009'}
+        updated, logs = apply_overrides('TEST_POLICY', fields)
+        self.assertEqual(updated['education_status'], '0049010')
+        self.assertEqual(updated['employment_status'], '0013009')  # 변경 없음
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]['before'], '0049009')
+        self.assertEqual(logs[0]['after'], '0049010')
+
+    @patch.dict('etl.services.overrides.POLICY_FIELD_OVERRIDES', {
+        'TEST_POLICY': {'nonexistent_field': '0049010'},
+    }, clear=True)
+    def test_unknown_field_ignored_with_warning(self):
+        """override에 존재하지 않는 field → 무시 + 로그"""
+        from etl.services.overrides import apply_overrides
+        fields = {'education_status': '0049009', 'employment_status': '0013009'}
+        with self.assertLogs('etl.services.overrides', level='WARNING') as cm:
+            updated, logs = apply_overrides('TEST_POLICY', fields)
+        self.assertEqual(updated, fields)  # 값 불변
+        self.assertEqual(logs, [])  # change log 없음
+        self.assertIn('nonexistent_field', cm.output[0])  # 경고 로그에 필드명 포함
