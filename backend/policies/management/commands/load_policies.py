@@ -64,6 +64,13 @@ class Command(BaseCommand):
     help = '온통청년 API 데이터를 DB에 적재'
 
     def handle(self, *args, **options):
+        self.stderr.write(
+            self.style.WARNING(
+                "[DEPRECATED] 'load_policies'는 곧 제거됩니다. "
+                "대신 'python manage.py run_etl'을 사용하세요."
+            )
+        )
+
         # JSON 파일 경로
         json_path = '../data/raw/seoul_policies.json'
 

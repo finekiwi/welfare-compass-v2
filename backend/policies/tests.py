@@ -1,6 +1,13 @@
-from django.test import TestCase
+from unittest.mock import patch
+from django.test import TestCase, SimpleTestCase
 from django.contrib.auth.models import User
 from accounts.models import Profile
+from policies.services.matching import (
+    match_policies_for_web,
+    match_policies_for_chatbot,
+    _select_diverse_categories,
+    _passes_profile_code_filters,
+)
 from policies.services.matching_keys import (
     MATCHING_DICT_KEYS,
     VALID_SPECIAL_CONDITIONS,
@@ -162,3 +169,116 @@ class TestExtractKnownOnly(TestCase):
 
     def test_all_unknown_returns_empty(self):
         self.assertEqual(extract_known_only('0013009', KNOWN_JOB_CODES), '')
+
+
+class TestWebChatbotCategoryCapContract(SimpleTestCase):
+    """[BRAIN4-37 C07] 웹/챗봇 카테고리 cap 계약 테스트"""
+
+    class DummyProfile:
+        def to_matching_dict(self):
+            return {'age': 25}
+
+    @patch('policies.services.matching._match_policies_core', return_value=[])
+    def test_web_calls_core_with_no_category_cap(self, mock_core):
+        profile = self.DummyProfile()
+        match_policies_for_web(profile)
+
+        mock_core.assert_called_once_with(
+            {'age': 25},
+            exclude_policy_ids=None,
+            include_category=None,
+            limit=None,
+            max_per_category=None,
+        )
+
+    @patch('policies.services.matching._match_policies_core', return_value=[])
+    def test_chatbot_calls_core_with_cap_2(self, mock_core):
+        match_policies_for_chatbot({'age': 25})
+
+        mock_core.assert_called_once_with(
+            {'age': 25},
+            exclude_policy_ids=None,
+            include_category=None,
+            limit=2,
+            max_per_category=2,
+        )
+
+
+class TestSelectDiverseCategories(SimpleTestCase):
+    """[BRAIN4-37 C07] 카테고리 제한 동작 테스트"""
+
+    class DummyPolicy:
+        def __init__(self, subcategory, category):
+            self.subcategory = subcategory
+            self.category = category
+
+    def test_no_cap_returns_all_scored_order(self):
+        scored = [
+            (self.DummyPolicy('주거', '주거'), 100),
+            (self.DummyPolicy('주거', '주거'), 95),
+            (self.DummyPolicy('주거', '주거'), 90),
+            (self.DummyPolicy('일자리', '일자리'), 85),
+        ]
+
+        result = _select_diverse_categories(scored, max_per_category=None, limit=None)
+        self.assertEqual(len(result), 4)
+        self.assertEqual([score for _, score in result], [100, 95, 90, 85])
+
+    def test_cap_2_limits_per_category(self):
+        scored = [
+            (self.DummyPolicy('주거', '주거'), 100),
+            (self.DummyPolicy('주거', '주거'), 95),
+            (self.DummyPolicy('주거', '주거'), 90),
+            (self.DummyPolicy('일자리', '일자리'), 85),
+        ]
+
+        result = _select_diverse_categories(scored, max_per_category=2, limit=None)
+        self.assertEqual(len(result), 3)
+        self.assertEqual([score for _, score in result], [100, 95, 85])
+
+
+class TestFailOpenGuard(SimpleTestCase):
+    """[BRAIN4-37 C06] unknown 코드 fail-open 가드 테스트"""
+
+    class DummyPolicy:
+        def __init__(
+            self,
+            policy_id='P-001',
+            employment_status='',
+            education_status='',
+            marriage_status='',
+        ):
+            self.policy_id = policy_id
+            self.employment_status = employment_status
+            self.education_status = education_status
+            self.marriage_status = marriage_status
+
+    def test_job_unknown_only_passes(self):
+        policy = self.DummyPolicy(employment_status='0013009')
+        user = {'job_code': '0013001'}
+        self.assertTrue(_passes_profile_code_filters(policy, user))
+
+    def test_job_mixed_known_and_unknown_uses_known_only(self):
+        policy = self.DummyPolicy(employment_status='0013003,0013009')
+        self.assertFalse(_passes_profile_code_filters(policy, {'job_code': '0013001'}))
+        self.assertTrue(_passes_profile_code_filters(policy, {'job_code': '0013003'}))
+
+    def test_education_unknown_only_passes(self):
+        policy = self.DummyPolicy(education_status='0049009')
+        user = {'education_code': '0049007'}
+        self.assertTrue(_passes_profile_code_filters(policy, user))
+
+    def test_education_mixed_known_and_unknown_uses_known_only(self):
+        policy = self.DummyPolicy(education_status='0049005,0049009')
+        self.assertFalse(_passes_profile_code_filters(policy, {'education_code': '0049007'}))
+        self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049005'}))
+
+    def test_education_also_match_is_respected(self):
+        # 사용자 0049005(대학재학)는 0049006(대졸예정) 정책도 매칭되어야 함
+        policy = self.DummyPolicy(education_status='0049006,0049009')
+        self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049005'}))
+
+    def test_marriage_filter_kept(self):
+        policy = self.DummyPolicy(marriage_status='0055001')  # 기혼 전용
+        self.assertFalse(_passes_profile_code_filters(policy, {'marriage_code': '0055002'}))
+        self.assertTrue(_passes_profile_code_filters(policy, {'marriage_code': '0055001'}))
