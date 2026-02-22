@@ -16,7 +16,9 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from accounts.views import GoogleLogin, FindUsernameView, PasswordResetConfirmRedirectView, AxesLockedLoginView, CustomPasswordResetView
+from django.http import HttpResponseRedirect
+from django.conf import settings
+from accounts.views import GoogleLogin, FindUsernameView, PasswordResetConfirmRedirectView, AxesLockedLoginView, CustomPasswordResetView, clean_logout
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,8 +27,9 @@ urlpatterns = [
     
     # dj-rest-auth & allauth
     path('api/auth/login/', AxesLockedLoginView.as_view(), name='rest_login'),  # 계정 잠금 체크 포함
+    path('api/auth/logout/', clean_logout, name='rest_logout'),   # [보안] 쿠키 완전 삭제 (순수 Django 함수형 뷰)
     path('api/auth/password/reset/', CustomPasswordResetView.as_view(), name='rest_password_reset'), # [커스텀] 이메일 존재 여부 확인
-    path('api/auth/', include('dj_rest_auth.urls')),
+    path('api/auth/', include('dj_rest_auth.urls')),  # 위에서 login/logout/password/reset 오버라이드 후 나머지
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
     path('api/auth/google/login/', GoogleLogin.as_view(), name='google_login'),
     path('api/auth/find/username/', FindUsernameView.as_view(), name='find_username'), # [이동] 일관성을 위해 auth 경로로 이동

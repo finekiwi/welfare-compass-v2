@@ -32,8 +32,8 @@ export type LoginRequest = {
 };
 
 export type LoginResponse = {
-    access: string;
-    refresh: string;
+    access?: string;
+    refresh?: string;
     user: {
         pk: number;
         username: string;

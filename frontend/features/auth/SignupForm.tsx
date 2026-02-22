@@ -82,13 +82,24 @@ export function SignupForm() {
 
   const passwordValidation = validatePassword(password);
 
+  const USERNAME_REGEX = /^[a-z0-9_-]{4,20}$/;
+
   // ✅ 실시간 아이디 중복 확인 (debounce)
   const checkUsername = useCallback(async (value: string) => {
-    if (value.length < 3) {
+    if (value.length < 4) {
       setUsernameStatus({
         checking: false,
         available: null,
-        message: value.length > 0 ? "3자 이상 입력해주세요." : "",
+        message: value.length > 0 ? "4자 이상 입력해주세요." : "",
+      });
+      return;
+    }
+
+    if (!USERNAME_REGEX.test(value)) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: "영문 소문자, 숫자, _(언더바), -(하이픈)만 사용 가능합니다.",
       });
       return;
     }
@@ -143,7 +154,13 @@ export function SignupForm() {
     e.preventDefault();
     setFieldErrors({}); // 초기화
 
-    // 1️⃣ 아이디 중복 확인
+    // 1️⃣ 아이디 형식 검증
+    if (!USERNAME_REGEX.test(username)) {
+      setFieldErrors((prev) => ({ ...prev, username: "❌ 아이디는 4~20자의 영문 소문자, 숫자, _(언더바), -(하이픈)만 사용 가능합니다." }));
+      return;
+    }
+
+    // 2️⃣ 아이디 중복 확인
     if (!usernameStatus.available) {
       setFieldErrors((prev) => ({ ...prev, username: "❌ 아이디 중복 확인을 해주세요." }));
       return;
@@ -275,8 +292,9 @@ export function SignupForm() {
             }`}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="username (3자 이상)"
+          // placeholder="4~20자, 영문 소문자/숫자/_/-"
           required
+          maxLength={20}
         />
         {/* ✅ 실시간 아이디 중복 확인 메시지 */}
         {usernameStatus.message && (

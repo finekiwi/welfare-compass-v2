@@ -17,8 +17,15 @@ export default function FindAccountPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        // [보안] 운영 환경에서만 reCAPTCHA 필수, 개발 환경에서는 키 없어도 테스트 가능
+        const isProduction = process.env.NODE_ENV === 'production';
+        if (isProduction && !process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+            setMessage({ type: 'error', text: "reCAPTCHA 환경 변수가 설정되지 않아 진행할 수 없습니다." });
+            return;
+        }
+
         const token = recaptchaRef.current?.getValue();
-        if (!token) {
+        if (!token && isProduction) {
             setMessage({ type: 'error', text: "로봇이 아님을 증명해주세요." });
             return;
         }
@@ -29,10 +36,10 @@ export default function FindAccountPage() {
         try {
             if (activeTab === 'id') {
                 await findUsername(email, token);
-                setMessage({ type: 'success', text: "입력하신 이메일로 아이디 정보를 전송했습니다." });
+                setMessage({ type: 'success', text: "입력하신 이메일이 가입된 계정이라면, 아이디 정보를 발송했습니다." });
             } else {
                 await requestPasswordReset(email, token);
-                setMessage({ type: 'success', text: "입력하신 이메일로 비밀번호 재설정 링크를 전송했습니다." });
+                setMessage({ type: 'success', text: "입력하신 이메일이 가입된 계정이라면, 비밀번호 재설정 링크를 발송했습니다." });
             }
             recaptchaRef.current?.reset();
         } catch (error: any) {
@@ -86,10 +93,20 @@ export default function FindAccountPage() {
                     </div>
 
                     <div className="flex justify-center">
-                        <ReCAPTCHA
-                            ref={recaptchaRef}
-                            sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || ""}
-                        />
+                        {process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ? (
+                            <ReCAPTCHA
+                                ref={recaptchaRef}
+                                sitekey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY}
+                            />
+                        ) : process.env.NODE_ENV === 'production' ? (
+                            <div className="p-4 text-sm text-red-600 bg-red-50 rounded-md">
+                                reCAPTCHA 환경 변수가 설정되지 않아 인증을 진행할 수 없습니다. 관리자에게 문의하세요.
+                            </div>
+                        ) : (
+                            <div className="p-4 text-sm text-yellow-700 bg-yellow-50 rounded-md">
+                                ⚠️ 개발 환경: reCAPTCHA 키가 설정되지 않아 캡챠 없이 테스트가 가능합니다.
+                            </div>
+                        )}
                     </div>
 
                     {message && (

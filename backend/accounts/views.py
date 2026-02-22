@@ -29,6 +29,40 @@ from django.utils import timezone
 from datetime import timedelta
 
 
+import json
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def clean_logout(request):
+    """
+    쿠키 완전 삭제 로그아웃.
+    [주의] Python SimpleCookie는 쿠키 이름을 KEY로 쓰는 딕셔너리라,
+    같은 이름으로 delete_cookie를 두 번 호출하면 마지막 것이 앞 것을 덮어씀.
+    SIMPLE_JWT.AUTH_COOKIE_PATH='/'로 통일되어 있으므로 Path=/ 하나만 삭제하면 됨.
+    """
+    response = HttpResponse(
+        json.dumps({"detail": "로그아웃 되었습니다."}),
+        content_type='application/json',
+        status=200,
+    )
+
+    # access_token 삭제 (Path=/)
+    response.delete_cookie('access_token', path='/', samesite='Lax')
+
+    # refresh_token 삭제 (Path=/ — dj-rest-auth와 simplejwt 모두 이제 / 사용)
+    response.delete_cookie('refresh_token', path='/', samesite='Lax')
+
+    return response
+
+
+# urls.py에서 CleanLogoutView 대신 clean_logout 을 참조해야 함
+CleanLogoutView = clean_logout  # 하위 호환 alias
+
+
 class AxesLockedLoginView(DjRestAuthLoginView):
     """
     dj-rest-auth LoginView + 계정 잠금
@@ -126,8 +160,8 @@ class GoogleLogin(SocialLoginView):
         try:
             return super().post(request, *args, **kwargs)
         except Exception as e:
-            print(f"DEBUG: GoogleLogin Exception: {e}")
-            return Response({"error": str(e), "detail": "Google Login Failed"}, status=status.HTTP_400_BAD_REQUEST)
+            logger.error(f"Google Login Exception: {e}", exc_info=True)
+            return Response({"error": "구글 로그인 처리에 실패했습니다. 잠시 후 다시 시도해주세요."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # class SignupView(generics.CreateAPIView):
@@ -402,9 +436,12 @@ from dj_rest_auth.views import PasswordResetView # [추가] 부모 클래스 임
 def verify_recaptcha(token):
     """Google reCAPTCHA v2 검증"""
     secret_key = os.environ.get('RECAPTCHA_SECRET_KEY')
-    # 키가 설정되지 않았으면 검증 패스 (개발 편의성)
+    # [보안] 운영 환경(DEBUG=False)에서는 키 누락 시 무조건 차단
     if not secret_key:
-        return True
+        if not settings.DEBUG:
+            logger.error("RECAPTCHA_SECRET_KEY가 설정되지 않았습니다. 운영 환경에서는 필수입니다.")
+            return False
+        return True  # 개발 환경에서만 패스
         
     if not token:
         return False
@@ -414,15 +451,22 @@ def verify_recaptcha(token):
         'response': token
     }
     try:
-        response = requests.post('https://www.google.com/recaptcha/api/siteverify', data=data)
+        response = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data=data,
+            timeout=5,  # [보안] 구글 API 지연 시 스레드 행(hang) 방지
+        )
         result = response.json()
         return result.get('success', False)
+    except requests.exceptions.Timeout:
+        logger.warning("reCAPTCHA 검증 API 타임아웃 발생")
+        return False
     except Exception:
         return False
 
 class CustomPasswordResetView(PasswordResetView):
     """
-    비밀번호 재설정 API (이메일 존재 여부 확인 + reCAPTCHA 추가)
+    비밀번호 재설정 API (reCAPTCHA + User Enumeration 방지)
     """
     def post(self, request, *args, **kwargs):
         # 0. reCAPTCHA 검증
@@ -432,11 +476,12 @@ class CustomPasswordResetView(PasswordResetView):
 
         email = request.data.get('email')
         
-        # 이메일 존재 여부 확인
+        # [보안] User Enumeration 방지: 이메일 존재 여부와 무관하게 동일한 200 응답 반환
         if not User.objects.filter(email=email).exists():
+            logger.info("비밀번호 재설정 요청 - 미가입 이메일")
             return Response(
-                {"error": "해당 이메일로 가입된 정보가 없습니다."},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "입력하신 이메일이 가입된 계정이라면, 비밀번호 재설정 링크를 발송했습니다."},
+                status=status.HTTP_200_OK
             )
             
         return super().post(request, *args, **kwargs)
@@ -447,7 +492,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 class FindUsernameView(APIView):
-    # ... (header remains same)
+    """
+    아이디 찾기 API (reCAPTCHA + User Enumeration 방지)
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         # 0. reCAPTCHA 검증
@@ -460,16 +509,20 @@ class FindUsernameView(APIView):
         if not email:
             return Response({"error": "이메일을 입력해주세요."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. 이메일로 유저 찾기
+        # [보안] User Enumeration 방지: 가입 여부와 관계없이 동일한 응답 반환
+        # 실제 발송은 가입자에게만 처리
+        UNIFIED_MESSAGE = "입력하신 이메일이 가입된 계정이라면, 아이디 정보를 발송했습니다."
+
         users = User.objects.filter(email=email)
         
         if not users.exists():
+            logger.info(f"아이디 찾기 요청 - 미가입 이메일")
             return Response(
-                {"error": "해당 이메일로 가입된 정보가 없습니다."}, 
-                status=status.HTTP_400_BAD_REQUEST
+                {"message": UNIFIED_MESSAGE},
+                status=status.HTTP_200_OK
             )
 
-        # 2. 유저가 존재하면 이메일 발송
+        # 유저가 존재하면 이메일 발송
         user = users.first()
         subject = "[복지나침반] 아이디 찾기 결과입니다."
         message = f"회원님의 아이디는 '{user.username}' 입니다."
@@ -498,7 +551,7 @@ class FindUsernameView(APIView):
             pass
         
         return Response(
-            {"message": "입력하신 이메일로 아이디 정보를 전송했습니다."},
+            {"message": UNIFIED_MESSAGE},
             status=status.HTTP_200_OK
         )
 

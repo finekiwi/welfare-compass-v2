@@ -10,3 +10,4 @@ django-allauth>=0.61.1
 dj-rest-auth>=5.0.0
 requests>=2.31.0
 cryptography>=41.0.0
+django-axes>=6.0.0

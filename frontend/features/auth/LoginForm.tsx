@@ -28,10 +28,10 @@ export function LoginForm() {
     try {
       setLoading(true);
 
-      const tokens = await login({ username, password });
+      await login({ username, password });
 
-      // ✅ auth store를 통해 토큰 저장 및 인증 상태 업데이트
-      authLogin(tokens);
+      // ✅ 쿠키 검증 후 인증 상태 확정 (보수적 업데이트)
+      await authLogin();
 
       // 로그인 성공 후 메인 페이지로 이동
       router.push("/");
@@ -46,10 +46,10 @@ export function LoginForm() {
           setError("❌ 아이디 또는 비밀번호가 일치하지 않습니다.");
         }
       } else if (err.response?.status === 400) {
-        // [수정] 400 에러 중 non_field_errors(로그인 실패)인 경우 문구 변경
         const data = err.response?.data;
         if (data && data.non_field_errors) {
-          setError("❌ 회원가입 정보가 없습니다.");
+          // dj-rest-auth는 잘못된 로그인 자격증명에 400 + non_field_errors를 반환함
+          setError("❌ 아이디 또는 비밀번호가 일치하지 않습니다.");
         } else {
           setError("❌ 입력 정보를 다시 확인해주세요.");
         }
