@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 if FastMCP is not None:
     _transport = os.getenv("MCP_TRANSPORT", "stdio")
     _port = int(os.getenv("MCP_PORT", "8001"))
-    _host = "0.0.0.0" if _transport == "sse" else "127.0.0.1"
+    _host = os.getenv("MCP_HOST", "0.0.0.0" if _transport == "sse" else "127.0.0.1")
     mcp = FastMCP("welfare-rag", host=_host, port=_port)
 
     @mcp.tool()

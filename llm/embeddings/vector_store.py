@@ -116,6 +116,9 @@ def extract_metadata(policy: dict) -> Dict[str, Any]:
         "maxAge": int(policy.get('sprtTrgtMaxAge') or 99),
         "region": policy.get('rgtrHghrkInstCdNm', ''),
         "earnCndSeCd": policy.get('earnCndSeCd', ''),
+        "earnMaxAmt": policy.get('earnMaxAmt'),
+        "lclsfNm": policy.get('lclsfNm', ''),
+        "mclsfNm": policy.get('mclsfNm', ''),
         "aplyYmd": policy.get('aplyYmd', ''),
         "aplyUrlAddr": policy.get('aplyUrlAddr', ''),
         "plcySprtCn": policy.get('plcySprtCn', '')[:200] if policy.get('plcySprtCn') else '',  # 요약용

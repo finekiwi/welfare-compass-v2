@@ -1,3 +1,4 @@
+# .env.docker.example → .env.docker 복사 필요
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL
@@ -60,6 +61,9 @@ services:
     env_file: [.env.docker]
     ports:
       - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - ./data/chroma_db:/app/data/chroma_db
       - ./data/raw:/app/data/raw
