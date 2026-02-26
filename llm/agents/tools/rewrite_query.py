@@ -5,10 +5,13 @@
 """
 
 import json
+import logging
 import re
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from llm.agents.prompts.rewrite_query import REWRITE_QUERY_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 def _get_llm() -> ChatOpenAI:
@@ -139,8 +142,8 @@ def rewrite_query_full(query: str) -> dict:
         raw_response = _rewrite_with_llm(query)
         return _parse_json_response(raw_response, query)
 
-    except Exception as e:
-        print(f"쿼리 변환 오류: {e}")
+    except Exception:
+        logger.exception("쿼리 변환 오류")
         return {
             "bm25_query": query,
             "intent_keywords": [],
@@ -165,8 +168,8 @@ def rewrite_query_internal(query: str) -> str:
     try:
         result = rewrite_query_full(query)
         return result["bm25_query"]
-    except Exception as e:
-        print(f"쿼리 변환 오류: {e}")
+    except Exception:
+        logger.exception("쿼리 변환 오류")
         return query
 
 

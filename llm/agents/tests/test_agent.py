@@ -7,7 +7,6 @@ BRAIN4-29 AC 검증:
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 # ============================================================================
@@ -215,13 +214,13 @@ class TestTools:
                     "result_count": 1,
                     "policies": [
                         {
-                            "plcy_no": "P1",
+                            "policy_id": "P1",
                             "title": "청년월세지원",
                             "description": "설명",
                             "category": "주거",
-                            "region": "서울특별시",
-                            "min_age": 19,
-                            "max_age": 39,
+                            "district": "서울특별시",
+                            "age_min": 19,
+                            "age_max": 39,
                             "apply_url": "https://example.com",
                         }
                     ],

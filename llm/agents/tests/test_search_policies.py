@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import os
 import importlib
-from unittest.mock import patch
+import json
+import time
+from unittest.mock import Mock, patch
 
 import pytest
 from langchain_core.documents import Document
+import requests
 
 
 def _make_doc(idx: int = 1) -> Document:
@@ -126,6 +129,270 @@ class TestDirectSearchBackend:
         assert backend_on.use_reranker is True
 
 
+class _FakeSSEStreamResponse:
+    def __init__(self, lines: list[str], keep_open: bool = False) -> None:
+        self.lines = lines
+        self.keep_open = keep_open
+        self.closed = False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def iter_lines(self):
+        for line in self.lines:
+            yield line.encode("utf-8")
+        while self.keep_open and not self.closed:
+            time.sleep(0.01)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _build_sse_lines(messages: list[dict]) -> list[str]:
+    lines = [
+        "event: endpoint",
+        "data: /messages/?session_id=test-session",
+        "",
+    ]
+    for message in messages:
+        lines.extend(
+            [
+                "event: message",
+                f"data: {json.dumps(message, ensure_ascii=False)}",
+                "",
+            ]
+        )
+    return lines
+
+
+class TestMCPSearchBackend:
+    @pytest.fixture(autouse=True)
+    def _cleanup_shared_sessions(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        def _cleanup():
+            with MCPSearchBackend._shared_sessions_lock:
+                sessions = list(MCPSearchBackend._shared_sessions.values())
+                MCPSearchBackend._shared_sessions.clear()
+
+            for session in sessions:
+                session.stop_event.set()
+                if session.sse_response is not None:
+                    session.sse_response.close()
+                if session.listener is not None:
+                    session.listener.join(timeout=0.1)
+
+        _cleanup()
+        yield
+        _cleanup()
+
+    def test_search_successfully_parses_mcp_response(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        init_message = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+        call_payload = {
+            "original_query": "청년 월세 지원",
+            "rewritten_query": "청년 월세 지원 주거 보조금",
+            "result_count": 1,
+            "policies": [
+                {
+                    "policy_id": "P100",
+                    "title": "청년월세지원",
+                    "description": "월세 지원",
+                    "support_content": "최대 20만원",
+                    "age_min": 19,
+                    "age_max": 34,
+                    "district": "서울특별시",
+                    "category": "주거",
+                    "source": "postgres",
+                }
+            ],
+        }
+        call_message = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(call_payload, ensure_ascii=False)}],
+                "isError": False,
+            },
+        }
+        fake_sse = _FakeSSEStreamResponse(_build_sse_lines([init_message, call_message]))
+
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status = Mock()
+
+        with patch("llm.agents.tools.search_backend.requests.get", return_value=fake_sse), patch(
+            "llm.agents.tools.search_backend.requests.post",
+            return_value=mock_post_response,
+        ) as mock_post:
+            backend = MCPSearchBackend(timeout_seconds=0.5)
+            result = backend.search("청년 월세 지원", top_k=5)
+
+        assert result["result_count"] == 1
+        assert result["original_query"] == "청년 월세 지원"
+        assert result["rewritten_query"] == "청년 월세 지원 주거 보조금"
+        assert result["policies"][0]["policy_id"] == "P100"
+
+        methods = [call.kwargs["json"]["method"] for call in mock_post.call_args_list]
+        assert methods == ["initialize", "notifications/initialized", "tools/call"]
+        assert mock_post.call_args_list[2].kwargs["json"]["params"]["arguments"]["top_k"] == 5
+
+    def test_search_reuses_sse_session_for_multiple_calls(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        init_message = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+        call_message_1 = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "original_query": "월세 지원",
+                                "rewritten_query": "청년 월세 지원",
+                                "result_count": 1,
+                                "policies": [{"policy_id": "P1", "title": "정책1"}],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                ],
+            },
+        }
+        call_message_2 = {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "original_query": "주거 지원",
+                                "rewritten_query": "청년 주거 지원",
+                                "result_count": 1,
+                                "policies": [{"policy_id": "P2", "title": "정책2"}],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                ],
+            },
+        }
+        fake_sse = _FakeSSEStreamResponse(
+            _build_sse_lines([init_message, call_message_1, call_message_2]),
+            keep_open=True,
+        )
+
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status = Mock()
+
+        with patch("llm.agents.tools.search_backend.requests.get", return_value=fake_sse) as mock_get, patch(
+            "llm.agents.tools.search_backend.requests.post",
+            return_value=mock_post_response,
+        ) as mock_post:
+            backend = MCPSearchBackend(timeout_seconds=0.5)
+            result_1 = backend.search("월세 지원", top_k=2)
+            result_2 = backend.search("주거 지원", top_k=2)
+
+        assert result_1["policies"][0]["policy_id"] == "P1"
+        assert result_2["policies"][0]["policy_id"] == "P2"
+        assert mock_get.call_count == 1
+
+        methods = [call.kwargs["json"]["method"] for call in mock_post.call_args_list]
+        assert methods == ["initialize", "notifications/initialized", "tools/call", "tools/call"]
+
+    def test_search_returns_empty_on_sse_connection_failure(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        with patch(
+            "llm.agents.tools.search_backend.requests.get",
+            side_effect=requests.RequestException("connection failed"),
+        ):
+            backend = MCPSearchBackend(timeout_seconds=0.5)
+            result = backend.search("월세 지원", top_k=3)
+
+        assert result["result_count"] == 0
+        assert result["policies"] == []
+
+    def test_search_parses_split_text_chunks(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        init_message = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+        split_call_message = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": '{"original_query":"월세 지원","rewritten_query":"청년 월세 지원","result_count":1,"policies":',
+                    },
+                    {"type": "text", "text": '[{"policy_id":"P100","title":"청년월세지원"}]}'},
+                ]
+            },
+        }
+        fake_sse = _FakeSSEStreamResponse(_build_sse_lines([init_message, split_call_message]))
+
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status = Mock()
+
+        with patch("llm.agents.tools.search_backend.requests.get", return_value=fake_sse), patch(
+            "llm.agents.tools.search_backend.requests.post",
+            return_value=mock_post_response,
+        ):
+            backend = MCPSearchBackend(timeout_seconds=0.5)
+            result = backend.search("월세 지원", top_k=3)
+
+        assert result["result_count"] == 1
+        assert result["policies"][0]["policy_id"] == "P100"
+
+    def test_search_returns_empty_on_timeout(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        init_message = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+        fake_sse = _FakeSSEStreamResponse(_build_sse_lines([init_message]))
+
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status = Mock()
+
+        with patch("llm.agents.tools.search_backend.requests.get", return_value=fake_sse), patch(
+            "llm.agents.tools.search_backend.requests.post",
+            return_value=mock_post_response,
+        ):
+            backend = MCPSearchBackend(timeout_seconds=0.2)
+            result = backend.search("월세 지원", top_k=3)
+
+        assert result["result_count"] == 0
+        assert result["policies"] == []
+
+    def test_search_returns_empty_on_invalid_tool_payload_json(self):
+        from llm.agents.tools.search_backend import MCPSearchBackend
+
+        init_message = {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05"}}
+        invalid_call_message = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"content": [{"type": "text", "text": "{invalid-json"}]},
+        }
+        fake_sse = _FakeSSEStreamResponse(_build_sse_lines([init_message, invalid_call_message]))
+
+        mock_post_response = Mock()
+        mock_post_response.raise_for_status = Mock()
+
+        with patch("llm.agents.tools.search_backend.requests.get", return_value=fake_sse), patch(
+            "llm.agents.tools.search_backend.requests.post",
+            return_value=mock_post_response,
+        ):
+            backend = MCPSearchBackend(timeout_seconds=0.5)
+            result = backend.search("월세 지원", top_k=3)
+
+        assert result["result_count"] == 0
+        assert result["policies"] == []
+
+
 class TestSearchPoliciesTool:
     def test_format_no_results(self):
         from llm.agents.tools.search_policies import _format_for_orchestrator
@@ -207,6 +474,11 @@ needs_chroma_db = pytest.mark.skipif(
     reason="local Chroma DB not found",
 )
 
+needs_mcp_integration = pytest.mark.skipif(
+    os.getenv("RUN_MCP_INTEGRATION", "").lower() not in {"1", "true", "yes", "on"},
+    reason="RUN_MCP_INTEGRATION=1 not set",
+)
+
 
 @pytest.mark.integration
 @needs_openai_key
@@ -225,4 +497,21 @@ def test_integration_direct_backend_calls_local_ensemble(monkeypatch):
     assert isinstance(result, dict)
     assert result["original_query"] == "월세 지원"
     assert "policies" in result
+    assert result["result_count"] >= 1
     assert result["result_count"] <= 2
+
+
+@pytest.mark.integration
+@needs_mcp_integration
+def test_integration_mcp_backend_calls_remote_server():
+    """Integration test: run MCP backend against remote SSE server."""
+    from llm.agents.tools.search_backend import MCPSearchBackend
+
+    backend = MCPSearchBackend(timeout_seconds=10.0)
+    result = backend.search("청년 월세 지원", top_k=2)
+
+    assert isinstance(result, dict)
+    assert result["original_query"] == "청년 월세 지원"
+    assert "policies" in result
+    assert result["result_count"] >= 1
+    assert len(result["policies"]) >= 1

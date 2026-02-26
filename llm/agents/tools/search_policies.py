@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.tools import tool
 
-from .search_backend import get_search_backend
+from .search_backend import DEFAULT_TOP_K, get_search_backend, normalize_top_k
 
-DEFAULT_TOP_K = 10
-MAX_TOP_K = 20
-
-
-def _normalize_top_k(top_k: int) -> int:
-    """Normalize top_k to supported range."""
-    try:
-        parsed = int(top_k)
-    except (TypeError, ValueError):
-        parsed = DEFAULT_TOP_K
-    return min(max(1, parsed), MAX_TOP_K)
+logger = logging.getLogger(__name__)
 
 
 def _shorten(text: str, limit: int = 180) -> str:
@@ -48,15 +39,15 @@ def _format_for_orchestrator(result: dict[str, Any]) -> str:
     ]
 
     for idx, policy in enumerate(policies, start=1):
-        policy_id = policy.get("plcy_no") or policy.get("policy_id") or "N/A"
+        policy_id = policy.get("policy_id") or "N/A"
         title = policy.get("title") or "제목 없음"
         category = policy.get("category") or "미분류"
-        region = policy.get("region") or policy.get("district") or "정보 없음"
+        region = policy.get("district") or "정보 없음"
         apply_url = policy.get("apply_url") or ""
         description = _shorten(policy.get("description", ""))
 
-        min_age = policy.get("min_age", policy.get("age_min", 0))
-        max_age = policy.get("max_age", policy.get("age_max", 99))
+        min_age = policy.get("age_min", 0)
+        max_age = policy.get("age_max", 99)
         age_text = f"{min_age}~{max_age}세"
 
         lines.append(f"{idx}. {title} ({policy_id})")
@@ -72,14 +63,16 @@ def _format_for_orchestrator(result: dict[str, Any]) -> str:
 @tool
 def search_policies(query: str, top_k: int = DEFAULT_TOP_K) -> str:
     """Search policies via selected backend and return orchestrator-formatted text."""
-    normalized_top_k = _normalize_top_k(top_k)
+    normalized_top_k = normalize_top_k(top_k)
     backend = get_search_backend()
 
     try:
         result = backend.search(query=query, top_k=normalized_top_k)
     except NotImplementedError:
-        return "검색 결과 없음"
+        logger.error("Search backend is not implemented for current configuration.")
+        return "검색 백엔드가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요."
     except Exception:
+        logger.exception("Policy search backend call failed.")
         return "검색 중 오류가 발생했습니다"
 
     return _format_for_orchestrator(result)
