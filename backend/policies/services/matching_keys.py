@@ -152,6 +152,21 @@ RESTRICTION_CODE_MARRIAGE = '0055003'    # 결혼상태 제한없음
 
 
 # =============================================================================
+# 소득 코드 (earnCndSeCd) — 근거: docs/API코드정보 (2).xlsx
+# =============================================================================
+
+INCOME_CODE_ANY = '0043001'       # 무관
+INCOME_CODE_ANNUAL = '0043002'    # 연소득 (earnMaxAmt에 실제 금액)
+INCOME_CODE_OTHER = '0043003'     # 기타 (직접확인)
+
+INCOME_CODE_LABELS = {
+    '0043001': '무관',
+    '0043002': '연소득',
+    '0043003': '기타',
+}
+
+
+# =============================================================================
 # sbizCd 코드 상수 (특수조건)
 # =============================================================================
 
@@ -166,7 +181,7 @@ SBIZ_CODE_MILITARY = '0014007'        # 군인
 # 반환 계약
 # =============================================================================
 
-CHATBOT_TOP_K = 2  # 챗봇은 상위 2개 고정 반환
+CHATBOT_TOP_K = 5  # 챗봇은 상위 5개 반환 (카테고리당 cap=2는 matching.py에서 적용)
 
 
 # =============================================================================
@@ -222,3 +237,58 @@ def normalize_user_info(user_info: dict) -> dict:
     if raw_conditions:
         normalized['special_conditions'] = normalize_special_conditions(raw_conditions)
     return normalized
+
+
+# =============================================================================
+# Known 코드 집합 (unknown 판별 기준)
+# =============================================================================
+
+KNOWN_EDUCATION_CODES: set[str] = {
+    '0049001', '0049002', '0049003', '0049004',
+    '0049005', '0049006', '0049007', '0049008', '0049010',
+}
+
+KNOWN_JOB_CODES: set[str] = {
+    '0013001', '0013002', '0013003', '0013004', '0013006', '0013010',
+}
+
+
+# =============================================================================
+# 코드 문자열 파싱 유틸
+# =============================================================================
+
+def parse_code_string(raw: str | None) -> set[str]:
+    """'0013001, 0013003' -> {'0013001', '0013003'}"""
+    if raw is None:
+        return set()
+
+    tokens: set[str] = set()
+    for part in str(raw).split(','):
+        code = part.strip()
+        if not code:
+            continue
+
+        # 범위 표현 방어: 0013001~0013009
+        if '~' in code:
+            s, e = [x.strip() for x in code.split('~', 1)]
+            if s.isdigit() and e.isdigit() and len(s) == len(e) and int(s) <= int(e):
+                width = len(s)
+                tokens.update(f"{n:0{width}d}" for n in range(int(s), int(e) + 1))
+                continue
+
+        tokens.add(code)
+
+    return tokens
+
+
+def has_unknown_codes(raw: str | None, known: set[str]) -> bool:
+    """unknown 코드가 1개라도 있으면 True"""
+    codes = parse_code_string(raw)
+    return bool(codes - known)
+
+
+def extract_known_only(raw: str | None, known: set[str]) -> str:
+    """unknown 제거 후 known 코드만 ','로 join한 문자열 반환"""
+    codes = parse_code_string(raw)
+    known_codes = sorted(codes & known, key=int)
+    return ','.join(known_codes)

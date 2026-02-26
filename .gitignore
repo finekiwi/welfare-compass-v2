@@ -153,6 +153,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
 .envrc
 .venv
 env/
@@ -256,6 +257,9 @@ out/
 # TypeScript build info
 *.tsbuildinfo
 .DS_Store
+
+# MCP 설정
+.mcp.json
 
 # Claude Code
 .claude/

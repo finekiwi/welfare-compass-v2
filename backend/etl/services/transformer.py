@@ -3,7 +3,7 @@
 
 정제 규칙:
 1. 나이: 빈 값 → 키워드 기반 추론 → 기본값 19-39, 0은 유지
-2. 신청기간: 전체 +2년 변환
+2. 신청기간: 2024년은 +2년, 2025년은 +1년 보정
 3. 카테고리: 대분류 5개 + 중분류 보존
 """
 
@@ -13,6 +13,7 @@ from datetime import datetime, date
 from typing import Optional, Any, Tuple
 from dataclasses import dataclass
 from django.utils import timezone
+from .overrides import apply_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,35 @@ AGE_RULES = [
 DEFAULT_MIN_AGE = 0
 DEFAULT_MAX_AGE = 99
 
+# 서울 25개 구 zipCd → 한글 매핑
+ZIPCD_TO_DISTRICT = {
+    '11110': '종로구',
+    '11140': '중구',
+    '11170': '용산구',
+    '11200': '성동구',
+    '11215': '광진구',
+    '11230': '동대문구',
+    '11260': '중랑구',
+    '11290': '성북구',
+    '11305': '강북구',
+    '11320': '도봉구',
+    '11350': '노원구',
+    '11380': '은평구',
+    '11410': '서대문구',
+    '11440': '마포구',
+    '11470': '양천구',
+    '11500': '강서구',
+    '11530': '구로구',
+    '11545': '금천구',
+    '11560': '영등포구',
+    '11590': '동작구',
+    '11620': '관악구',
+    '11650': '서초구',
+    '11680': '강남구',
+    '11710': '송파구',
+    '11740': '강동구',
+}
+
 
 @dataclass
 class TransformedPolicy:
@@ -57,7 +87,7 @@ class TransformedPolicy:
     employment_status: str  # [RENAME] job_cd → employment_status
     education_status: str  # [RENAME] school_cd → education_status
 
-    # 신청기간 (2024→2026 변환 적용)
+    # 신청기간 연도 보정 적용 (2024:+2, 2025:+1)
     apply_start_date: Optional[date]  # [RENAME] aply_start_dt → apply_start_date
     apply_end_date: Optional[date]  # [RENAME] aply_end_dt → apply_end_date
     business_start_date: Optional[date]  # [RENAME] biz_prd_bgng_ymd → business_start_date
@@ -91,14 +121,28 @@ class PolicyTransformer:
             policy_name
         )
 
-        # 신청기간 정제: 2024 → 2026 변환
+        # 신청기간 정제: 연도 보정 (2024:+2, 2025:+1)
         aply_start, aply_end = self._parse_date_range_with_year_fix(raw.get('aplyYmd', ''))
+
+        normalized_title = self._normalize_text_years(raw.get('plcyNm', ''))
+        normalized_description = self._normalize_text_years(raw.get('plcyExplnCn', ''))
+        normalized_support_content = self._normalize_text_years(raw.get('plcySprtCn', ''))
+        normalized_apply_method = self._normalize_text_years(raw.get('plcyAplyMthdCn', ''))
+
+        # [BRAIN4-37 C02] 정책별 override 적용
+        override_fields, _logs = apply_overrides(
+            raw['plcyNo'],
+            {
+                'education_status': raw.get('schoolCd', ''),
+                'employment_status': raw.get('jobCd', ''),
+            },
+        )
 
         return TransformedPolicy(
             policy_id=raw['plcyNo'],  # [RENAME] plcy_no → policy_id
-            title=raw.get('plcyNm', ''),  # [RENAME] plcy_nm → title
-            description=raw.get('plcyExplnCn', ''),  # [RENAME] plcy_expln_cn → description
-            support_content=raw.get('plcySprtCn', ''),  # [RENAME] plcy_sprt_cn → support_content
+            title=normalized_title,  # [RENAME] plcy_nm → title
+            description=normalized_description,  # [RENAME] plcy_expln_cn → description
+            support_content=normalized_support_content,  # [RENAME] plcy_sprt_cn → support_content
 
             age_min=min_age,  # [RENAME] sprt_trgt_min_age → age_min
             age_max=max_age,  # [RENAME] sprt_trgt_max_age → age_max
@@ -107,18 +151,18 @@ class PolicyTransformer:
             income_min=self._parse_int(raw.get('earnMinAmt')),  # [RENAME] earn_min_amt → income_min
             income_max=self._parse_int(raw.get('earnMaxAmt')),  # [RENAME] earn_max_amt → income_max
             marriage_status=raw.get('mrgSttsCd', ''),  # [RENAME] mrg_stts_cd → marriage_status
-            employment_status=raw.get('jobCd', ''),  # [RENAME] job_cd → employment_status
-            education_status=raw.get('schoolCd', ''),  # [RENAME] school_cd → education_status
+            employment_status=override_fields['employment_status'],
+            education_status=override_fields['education_status'],
 
             apply_start_date=aply_start,  # [RENAME] aply_start_dt → apply_start_date
             apply_end_date=aply_end,  # [RENAME] aply_end_dt → apply_end_date
             business_start_date=self._parse_date_with_year_fix(raw.get('bizPrdBgngYmd')),  # [RENAME] biz_prd_bgng_ymd → business_start_date
             business_end_date=self._parse_date_with_year_fix(raw.get('bizPrdEndYmd')),  # [RENAME] biz_prd_end_ymd → business_end_date
 
-            apply_method=raw.get('plcyAplyMthdCn', ''),  # [RENAME] plcy_aply_mthd_cn → apply_method
+            apply_method=normalized_apply_method,  # [RENAME] plcy_aply_mthd_cn → apply_method
             apply_url=raw.get('aplyUrlAddr', ''),  # [RENAME] aply_url_addr → apply_url
 
-            district=self._parse_district(raw.get('rgtrInstCdNm', '')),
+            district=self._parse_district(raw.get('zipCd', ''), raw.get('rgtrInstCdNm', '')),
 
             category=raw.get('lclsfNm', '').strip(),  # [RENAME] lclsf_nm → category (대분류)
             subcategory=raw.get('mclsfNm', '').strip(),  # [RENAME] mclsf_nm → subcategory (중분류)
@@ -192,28 +236,31 @@ class PolicyTransformer:
 
     def _parse_date_with_year_fix(self, value: str) -> Optional[date]:
         """
-        날짜 정제 + 전체 +2년 변환
+        날짜 정제 + 연도 보정
 
         예: "20240916" → date(2026, 9, 16)
-            "20250630" → date(2027, 6, 30)
+            "20250630" → date(2026, 6, 30)
+            "20260101" → date(2026, 1, 1)
         """
         if not value or len(value) != 8:
             return None
 
         try:
             parsed = datetime.strptime(value, '%Y%m%d').date()
-            # 전체 +2년 (단, 2026년 미만인 경우만)
-            if parsed.year < 2026:
+            # 회의 결정 반영: 2024는 +2년, 2025는 +1년
+            if parsed.year == 2024:
                 parsed = parsed.replace(year=parsed.year + 2)
+            elif parsed.year == 2025:
+                parsed = parsed.replace(year=parsed.year + 1)
             return parsed
         except ValueError:
             return None
 
     def _parse_date_range_with_year_fix(self, value: str) -> tuple[Optional[date], Optional[date]]:
         """
-        날짜 범위 정제 + 전체 +2년 변환
+        날짜 범위 정제 + 연도 보정
 
-        예: "20240916 ~ 20251231" → (date(2026,9,16), date(2027,12,31))
+        예: "20240916 ~ 20251231" → (date(2026,9,16), date(2026,12,31))
         """
         if not value or '~' not in value:
             return None, None
@@ -238,6 +285,19 @@ class PolicyTransformer:
         except (ValueError, TypeError):
             return None
 
+    def _normalize_text_years(self, value: str) -> str:
+        """
+        텍스트에 포함된 연도 표기를 운영 연도 기준으로 보정.
+        - 2024 -> 2026
+        - 2025 -> 2026
+        """
+        if not value:
+            return ''
+
+        normalized = re.sub(r'(?<!\d)2024(?!\d)', '2026', value)
+        normalized = re.sub(r'(?<!\d)2025(?!\d)', '2026', normalized)
+        return normalized
+
     def _parse_datetime(self, value: str) -> Optional[datetime]:
         if not value:
             return None
@@ -251,24 +311,30 @@ class PolicyTransformer:
         except ValueError:
             return None
 
-    def _parse_district(self, value: str) -> Optional[str]:
+    def _parse_district(self, zip_cd: str, rgtr_inst: str) -> Optional[str]:
         """
-        서울특별시 은평구 → 은평구
+        zipCd 코드 → 한글 구 이름 변환.
 
-        정책 등록기관명이 들어오는 경우가 있어, 구 단위만 저장하도록 필터링
-        (예: "과학기술정보통신부 ..." → None)
+        1순위: zipCd로 매핑 (11380 → 은평구)
+        2순위: rgtrInstCdNm fallback (서울특별시 은평구 → 은평구)
+        - 11000(서울시 전체), 쉼표 다중 코드 → None (구 제한 없음)
         """
-        if not value or value == '서울특별시':
+        # 1순위: zipCd
+        if zip_cd:
+            # 쉼표로 여러 코드 → 광역(구 제한 없음)
+            if ',' in zip_cd:
+                return None
+            district = ZIPCD_TO_DISTRICT.get(zip_cd.strip())
+            if district:
+                return district
+            # 11000(서울시 전체) 또는 매핑 없는 코드 → None
             return None
 
-        # "서울특별시 ○○구" 형태면 구만 추출
-        if value.startswith('서울특별시 '):
-            candidate = value.replace('서울특별시 ', '')
-        else:
-            candidate = value
-
-        # 구 단위만 허용 (기타 기관명/중앙부처는 None)
-        if candidate.endswith('구') and len(candidate) <= 20:
-            return candidate
-
+        # 2순위: rgtrInstCdNm fallback
+        if not rgtr_inst or rgtr_inst == '서울특별시':
+            return None
+        if rgtr_inst.startswith('서울특별시 '):
+            candidate = rgtr_inst.replace('서울특별시 ', '')
+            if candidate.endswith('구'):
+                return candidate
         return None

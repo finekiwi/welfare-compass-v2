@@ -75,7 +75,8 @@ class ProfileSerializer(serializers.ModelSerializer):
         required=False
     )
     interests_display = serializers.SerializerMethodField()
-    
+    field_choices = serializers.SerializerMethodField()
+
     class Meta:
         model = Profile
         fields = [
@@ -88,12 +89,26 @@ class ProfileSerializer(serializers.ModelSerializer):
             'interests', 'interests_display',
             'email_notification_enabled', 'notification_email',
             'age',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at',
+            'field_choices',
         ]
         read_only_fields = ['username', 'email', 'age', 'created_at', 'updated_at']
     
     def get_interests_display(self, obj):
         return list(obj.interests.values_list('name', flat=True))
+
+    def get_field_choices(self, obj):
+        def to_options(choices):
+            return [{'value': k, 'label': v} for k, v in choices]
+
+        return {
+            'job_status': to_options(Profile.JOB_STATUS_CHOICES),
+            'education_status': to_options(Profile.EDUCATION_STATUS_CHOICES),
+            'marriage_status': to_options(Profile.MARRIAGE_STATUS_CHOICES),
+            'housing_type': to_options(Profile.HOUSING_TYPE_CHOICES),
+            'income_level': to_options(Profile.INCOME_LEVEL_CHOICES),
+            'special_conditions': [{'value': v, 'label': v} for v in VALID_SPECIAL_CONDITIONS],
+        }
     
     def validate_children_ages(self, value):
         """자녀 나이 유효성 검사"""

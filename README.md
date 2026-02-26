@@ -44,7 +44,7 @@ python manage.py migrate
 
 ### 5. 데이터 적재
 ```bash
-python manage.py load_policies
+python manage.py run_etl
 ```
 
 ### 6. 서버 실행

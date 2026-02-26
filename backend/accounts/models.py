@@ -97,8 +97,8 @@ class Profile(models.Model):
     )
     income_amount = models.IntegerField(
         null=True, blank=True,
-        verbose_name='월 소득(만원)',
-        help_text='월 평균 소득 (만원 단위)'
+        verbose_name='연소득(만원)',
+        help_text='연소득 (만원 단위)'
     )
     job_status = models.CharField(
         max_length=20, 

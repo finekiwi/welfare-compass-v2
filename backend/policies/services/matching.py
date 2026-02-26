@@ -10,6 +10,7 @@
 - match_policies_for_chatbot(user_info, top_k): 챗봇용 - 상위 N개 반환
 - match_policies(): deprecated 래퍼 (하위 호환용)
 """
+import logging
 import re
 from django.db.models import Q
 from policies.models import Policy
@@ -21,8 +22,16 @@ from policies.services.matching_keys import (
     RESTRICTION_CODE_MARRIAGE,
     EDUCATION_ALSO_MATCH,
     CHATBOT_TOP_K,
+    KNOWN_EDUCATION_CODES,
+    KNOWN_JOB_CODES,
+    INCOME_CODE_ANY,
+    INCOME_CODE_ANNUAL,
+    INCOME_CODE_OTHER,
+    parse_code_string,
     normalize_user_info,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -47,14 +56,20 @@ def match_policies_for_web(profile, exclude_policy_ids=None, include_category=No
         list of (Policy, score) tuples - 전체 반환
     """
     user_info = profile.to_matching_dict()
-    return _match_policies_core(user_info, exclude_policy_ids, include_category, limit=None)
+    return _match_policies_core(
+        user_info,
+        exclude_policy_ids=exclude_policy_ids,
+        include_category=include_category,
+        limit=None,
+        max_per_category=None,
+    )
 
 
 def match_policies_for_chatbot(user_info: dict, top_k: int = CHATBOT_TOP_K):
     """
     챗봇용 정책 매칭 - 상위 N개만 반환
 
-    [BRAIN4-34] top_k 기본값 CHATBOT_TOP_K(2)로 변경
+    [BRAIN4-34] top_k 기본값 CHATBOT_TOP_K(5)로 변경
 
     Args:
         user_info: 사용자 정보 dict (Profile.to_matching_dict() 형식)
@@ -62,12 +77,18 @@ def match_policies_for_chatbot(user_info: dict, top_k: int = CHATBOT_TOP_K):
             선택: employment_status, job_code, education_code, marriage_code,
                   housing_type, income, household_size, has_children,
                   children_ages, special_conditions, needs
-        top_k: 반환할 최대 정책 수 (기본값 2)
+        top_k: 반환할 최대 정책 수 (기본값 5)
 
     Returns:
         list of (Policy, score) tuples - 상위 top_k개
     """
-    return _match_policies_core(user_info, exclude_policy_ids=None, include_category=None, limit=top_k)
+    return _match_policies_core(
+        user_info,
+        exclude_policy_ids=None,
+        include_category=None,
+        limit=top_k,
+        max_per_category=2,
+    )
 
 
 def match_policies(profile, exclude_policy_ids=None, include_category=None, limit=10):
@@ -88,14 +109,26 @@ def match_policies(profile, exclude_policy_ids=None, include_category=None, limi
         list of (Policy, score) tuples
     """
     user_info = profile.to_matching_dict()
-    return _match_policies_core(user_info, exclude_policy_ids, include_category, limit)
+    return _match_policies_core(
+        user_info,
+        exclude_policy_ids=exclude_policy_ids,
+        include_category=include_category,
+        limit=limit,
+        max_per_category=2,
+    )
 
 
 # =============================================================================
 # [BRAIN4-31] 내부 핵심 함수
 # =============================================================================
 
-def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_category=None, limit=None):
+def _match_policies_core(
+    user_info: dict,
+    exclude_policy_ids=None,
+    include_category=None,
+    limit=None,
+    max_per_category=2,
+):
     """
     정책 매칭 핵심 로직 (내부 함수)
 
@@ -108,6 +141,7 @@ def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_categ
         exclude_policy_ids: 제외할 정책 ID 리스트
         include_category: 특정 카테고리만 포함
         limit: 최대 반환 개수 (None이면 전체 반환)
+        max_per_category: 카테고리별 최대 개수 (None이면 제한 없음)
 
     Returns:
         list of (Policy, score) tuples
@@ -121,7 +155,8 @@ def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_categ
     # Step 2: 정책 리스트 가져오기
     policies = list(queryset.prefetch_related('categories'))
 
-    # Step 3: 특수조건 필터링 (Boolean 필드 기반)
+    # Step 3: 코드 필터(job/education/marriage) + 특수조건 필터
+    policies = [p for p in policies if _passes_profile_code_filters(p, user_info)]
     policies = [p for p in policies if _check_special_conditions(p, user_info)]
 
     # Step 4: 우선순위 점수 계산
@@ -135,7 +170,11 @@ def _match_policies_core(user_info: dict, exclude_policy_ids=None, include_categ
     scored_policies.sort(key=lambda x: -x[1])
 
     # Step 6: 카테고리별 분산 선택
-    final_results = _select_diverse_categories(scored_policies, max_per_category=2, limit=limit)
+    final_results = _select_diverse_categories(
+        scored_policies,
+        max_per_category=max_per_category,
+        limit=limit,
+    )
 
     return final_results
 
@@ -148,6 +187,11 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
     - 취업 요건(jobCd), 학력 요건(schoolCd), 결혼 상태(mrgSttsCd) 필터링 추가
     - 기존: 나이/거주지만 필터링 → 28% 정책(114개)의 취업 요건이 무시됨
     - 개선: API 코드 기반 정확한 필터링
+
+    [BRAIN4-37 C06] 변경사항:
+    - unknown 코드(예: 0049009, 0013009 등)로 인한 부당 탈락 방지를 위해
+      job/education의 최종 판정은 Python 단계(_passes_profile_code_filters)에서 수행
+    - 여기서는 age/residence/marriage 중심의 coarse filter만 적용
     """
     queryset = Policy.objects.all()
 
@@ -178,37 +222,6 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
         )
 
     # =========================================================================
-    # [BRAIN4-31] 취업 요건 필터링 (jobCd)
-    # - Policy.employment_status에 저장된 코드(0013001 등)와 사용자 job_code 비교
-    # - 빈 값/제한없음(0013010)/사용자 코드 포함 시 통과
-    # =========================================================================
-    job_code = user_info.get('job_code', '')
-    if job_code:
-        queryset = queryset.filter(
-            Q(employment_status='') |
-            Q(employment_status__isnull=True) |
-            Q(employment_status__contains=RESTRICTION_CODE_JOB) |  # 제한없음
-            Q(employment_status__contains=job_code)
-        )
-
-    # =========================================================================
-    # [BRAIN4-31] 학력 요건 필터링 (schoolCd)
-    # - 고교재학(0049002)은 고졸예정(0049003) 정책도 매칭
-    # =========================================================================
-    education_code = user_info.get('education_code', '')
-    if education_code:
-        q = (
-            Q(education_status='') |
-            Q(education_status__isnull=True) |
-            Q(education_status__contains=RESTRICTION_CODE_EDUCATION) |
-            Q(education_status__contains=education_code)
-        )
-        # [BRAIN4-34] 추가 매칭 코드 (고교재학→고졸예정, 대학재학→대졸예정)
-        for also_code in EDUCATION_ALSO_MATCH.get(education_code, []):
-            q |= Q(education_status__contains=also_code)
-        queryset = queryset.filter(q)
-
-    # =========================================================================
     # [BRAIN4-31] 결혼 상태 필터링 (mrgSttsCd)
     # =========================================================================
     marriage_code = user_info.get('marriage_code', '')
@@ -221,6 +234,188 @@ def _apply_base_filters(user_info, exclude_policy_ids, include_category):
         )
 
     return queryset.distinct()
+
+
+def _log_unknown_codes(policy, field_name: str, unknown_codes: set[str]) -> None:
+    """unknown 코드 감지 로그"""
+    if not unknown_codes:
+        return
+    policy_id = getattr(policy, 'policy_id', 'UNKNOWN')
+    logger.warning(
+        "Unknown policy code detected: policy_id=%s field=%s unknown_codes=%s",
+        policy_id,
+        field_name,
+        ",".join(sorted(unknown_codes)),
+    )
+
+
+def _matches_job_requirement(policy, user_info: dict) -> bool:
+    """취업 요건 매칭 (unknown-only fail-open, mixed는 known 우선)"""
+    job_code = user_info.get('job_code', '')
+    policy_job = policy.employment_status or ''
+    if not job_code or not policy_job:
+        return True
+
+    policy_codes = parse_code_string(policy_job)
+    if not policy_codes:
+        return True
+
+    if RESTRICTION_CODE_JOB in policy_codes:
+        return True
+
+    known_codes = (policy_codes & KNOWN_JOB_CODES) - {RESTRICTION_CODE_JOB}
+    unknown_codes = policy_codes - KNOWN_JOB_CODES
+    _log_unknown_codes(policy, 'employment_status', unknown_codes)
+
+    # unknown-only면 탈락시키지 않음
+    if not known_codes and unknown_codes:
+        return True
+
+    # known+unknown 혼재면 known만 기준으로 평가
+    if known_codes:
+        return job_code in known_codes
+
+    return True
+
+
+def _matches_education_requirement(policy, user_info: dict) -> bool:
+    """학력 요건 매칭 (unknown-only fail-open, mixed는 known 우선)"""
+    education_code = user_info.get('education_code', '')
+    policy_edu = policy.education_status or ''
+    if not education_code or not policy_edu:
+        return True
+
+    policy_codes = parse_code_string(policy_edu)
+    if not policy_codes:
+        return True
+
+    if RESTRICTION_CODE_EDUCATION in policy_codes:
+        return True
+
+    known_codes = (policy_codes & KNOWN_EDUCATION_CODES) - {RESTRICTION_CODE_EDUCATION}
+    unknown_codes = policy_codes - KNOWN_EDUCATION_CODES
+    _log_unknown_codes(policy, 'education_status', unknown_codes)
+
+    # unknown-only면 탈락시키지 않음
+    if not known_codes and unknown_codes:
+        return True
+
+    # known+unknown 혼재면 known만 기준으로 평가
+    if known_codes:
+        allowed_codes = {education_code, *EDUCATION_ALSO_MATCH.get(education_code, [])}
+        return bool(allowed_codes & known_codes)
+
+    return True
+
+
+def _matches_marriage_requirement(policy, user_info: dict) -> bool:
+    """결혼 상태 요건 매칭"""
+    marriage_code = user_info.get('marriage_code', '')
+    policy_mrg = policy.marriage_status or ''
+    if not marriage_code or not policy_mrg:
+        return True
+
+    policy_codes = parse_code_string(policy_mrg)
+    if not policy_codes:
+        return True
+
+    if RESTRICTION_CODE_MARRIAGE in policy_codes:
+        return True
+
+    return marriage_code in policy_codes
+
+
+# =============================================================================
+# [BRAIN4-37] 2026 기준중위소득 (월, 원) — 보건복지부 고시
+# =============================================================================
+
+_MEDIAN_INCOME_2026_MONTHLY = {
+    1: 2_564_238,
+    2: 4_199_292,
+    3: 5_367_880,
+    4: 6_509_816,
+    5: 7_571_462,
+    6: 8_555_952,
+}
+
+
+def _annual_income_to_median_pct(annual_income_man_won, household_size) -> float | None:
+    """
+    연소득(만원) + 가구원수 → 중위소득 대비 % 반환.
+
+    Args:
+        annual_income_man_won: 연소득 (만원 단위)
+        household_size: 가구원 수
+
+    Returns:
+        중위소득 대비 퍼센트 (예: 50.0), 계산 불가 시 None
+    """
+    if annual_income_man_won is None or household_size is None:
+        return None
+    if household_size <= 0:
+        return None
+    # 6인 초과 → 6인 cap
+    capped_size = min(household_size, 6)
+    monthly_median = _MEDIAN_INCOME_2026_MONTHLY.get(capped_size)
+    if monthly_median is None:
+        return None
+    annual_median = monthly_median * 12
+    annual_income_won = annual_income_man_won * 10_000
+    return (annual_income_won / annual_median) * 100
+
+
+def _matches_income_requirement(policy, user_info: dict) -> bool:
+    """
+    소득 요건 매칭.
+
+    소득 코드는 3종(무관/연소득/기타)뿐이므로 ETL 한글 변환 대신
+    코드 직접 비교 (오타 방지, API 원본 대조 용이).
+
+    - 0043001(무관) / 0043003(기타) / 빈값 / 알수없는코드 → True (pass)
+    - 0043002(연소득) → user income <= policy.income_max
+    - 0043002인데 income_max is None or <=0 → True (fail-open, 직접확인 필요)
+    - user income 미입력 → True (fail-open)
+    """
+    income_code = policy.income_level or ''
+
+    # 빈값 → pass
+    if not income_code:
+        return True
+
+    # 무관 / 기타 → pass
+    if income_code in (INCOME_CODE_ANY, INCOME_CODE_OTHER):
+        return True
+
+    # 알수없는 코드 → fail-open
+    if income_code != INCOME_CODE_ANNUAL:
+        policy_id = getattr(policy, 'policy_id', 'UNKNOWN')
+        logger.warning(
+            "Unknown income code '%s' for policy %s – fail-open",
+            income_code,
+            policy_id,
+        )
+        return True
+
+    # income_code == INCOME_CODE_ANNUAL ('0043002')
+    policy_max = policy.income_max
+    if policy_max is None or policy_max <= 0:
+        return True  # fail-open: earnMaxAmt 미설정
+
+    user_income = user_info.get('income')
+    if user_income is None:
+        return True  # fail-open: 사용자 소득 미입력
+
+    return user_income <= policy_max
+
+
+def _passes_profile_code_filters(policy, user_info: dict) -> bool:
+    """job/education/marriage/income 코드 필터 종합 판정"""
+    return (
+        _matches_job_requirement(policy, user_info) and
+        _matches_education_requirement(policy, user_info) and
+        _matches_marriage_requirement(policy, user_info) and
+        _matches_income_requirement(policy, user_info)
+    )
 
 
 # =============================================================================
@@ -320,35 +515,9 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
         if policy.district not in user_residence and user_residence not in policy.district:
             return False
 
-    # =========================================================================
-    # [BRAIN4-31] 취업 요건 체크 (jobCd)
-    # =========================================================================
-    job_code = user_info.get('job_code', '')
-    policy_job = policy.employment_status or ''
-    if job_code and policy_job:
-        if RESTRICTION_CODE_JOB not in policy_job and job_code not in policy_job:
-            return False
-
-    # =========================================================================
-    # [BRAIN4-31] 학력 요건 체크 (schoolCd)
-    # =========================================================================
-    education_code = user_info.get('education_code', '')
-    policy_edu = policy.education_status or ''
-    if education_code and policy_edu:
-        if RESTRICTION_CODE_EDUCATION not in policy_edu:
-            # [BRAIN4-34] 추가 매칭 코드 동적 처리
-            also_codes = EDUCATION_ALSO_MATCH.get(education_code, [])
-            if education_code not in policy_edu and not any(c in policy_edu for c in also_codes):
-                return False
-
-    # =========================================================================
-    # [BRAIN4-31] 결혼 상태 체크 (mrgSttsCd)
-    # =========================================================================
-    marriage_code = user_info.get('marriage_code', '')
-    policy_mrg = policy.marriage_status or ''
-    if marriage_code and policy_mrg:
-        if RESTRICTION_CODE_MARRIAGE not in policy_mrg and marriage_code not in policy_mrg:
-            return False
+    # 3. 코드 필터 체크 (취업/학력/결혼)
+    if not _passes_profile_code_filters(policy, user_info):
+        return False
 
     # 4. 특수조건 체크 (한부모, 장애인, 수급자, 신혼, 중소기업, 군인 등)
     if not _check_special_conditions(policy, user_info):
@@ -400,7 +569,7 @@ def _get_relevant_categories(user_info):
 
     # 소득 맥락 (생활지원)
     income = user_info.get('income')
-    if income is not None and income < 300:
+    if income is not None and income < 3600:
         # ---------------------------------------------------------------------
         # [2026.01.20] 대분류 변경 (생활 -> 복지문화)
         # ---------------------------------------------------------------------
@@ -574,6 +743,7 @@ def _select_diverse_categories(scored_policies, max_per_category=2, limit=None):
     [BRAIN4-31] 변경사항:
     - limit=None 처리 추가: 전체 반환 시 max_per_category 제한만 적용
     - 회원 웹용(match_policies_for_web)에서 전체 정책 반환 지원
+    - max_per_category=None 처리: 카테고리 제한 없이 점수순 반환
     """
     final_results = []
     categories_selected = {}
@@ -585,7 +755,7 @@ def _select_diverse_categories(scored_policies, max_per_category=2, limit=None):
         # 중분류 우선 사용, 없으면 대분류 사용
         cat_name = policy.subcategory or policy.category or '기타'  # [RENAME] mclsf_nm → subcategory, lclsf_nm → category
 
-        if categories_selected.get(cat_name, 0) < max_per_category:
+        if max_per_category is None or categories_selected.get(cat_name, 0) < max_per_category:
             final_results.append((policy, score))
             categories_selected[cat_name] = categories_selected.get(cat_name, 0) + 1
 
