@@ -1,17 +1,110 @@
-version: '3.8'
-
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL
+  # ---------------------------------------------------------------------------
   db:
     image: postgres:15
     container_name: welfare_db
+    env_file: [.env.docker]
     environment:
-      POSTGRES_DB: welfare
-      POSTGRES_USER: welfare_user
-      POSTGRES_PASSWORD: welfare1234
+      POSTGRES_DB: ${DB_NAME:-welfare}
+      POSTGRES_USER: ${DB_USER:-welfare_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-welfare1234}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-welfare_user}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - welfare-net
+
+  # ---------------------------------------------------------------------------
+  # Django Backend
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: welfare_backend
+    env_file: [.env.docker]
+    ports:
+      - "8000:8000"
+    working_dir: /app/backend
+    volumes:
+      - ./backend:/app/backend
+      - ./data/raw:/app/data/raw
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - welfare-net
+
+  # ---------------------------------------------------------------------------
+  # MCP Server (SSE)
+  # ---------------------------------------------------------------------------
+  mcp:
+    build:
+      context: .
+      dockerfile: llm/Dockerfile
+    container_name: welfare_mcp
+    env_file: [.env.docker]
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/chroma_db:/app/data/chroma_db
+      - ./data/raw:/app/data/raw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    healthcheck:
+      test: ["CMD-SHELL", "curl -so /dev/null -w '%{http_code}' --max-time 3 http://localhost:8001/sse | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - welfare-net
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Next.js) — Dockerfile은 프론트팀이 작성
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: welfare_frontend
+    env_file: [.env.docker]
+    environment:
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - welfare-net
+    profiles:
+      - with-frontend  # 프론트 Dockerfile 준비 전까지 기본 실행에서 제외
 
 volumes:
   postgres_data:
+
+networks:
+  welfare-net:
+    driver: bridge

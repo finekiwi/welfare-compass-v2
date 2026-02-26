@@ -39,7 +39,11 @@ if not DEBUG and 'insecure' in SECRET_KEY:
         "운영 환경(DEBUG=False)에서는 안전한 DJANGO_SECRET_KEY 환경변수를 반드시 설정하세요."
     )
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if h.strip()
+]
 
 
 # Application definition
@@ -156,6 +160,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -189,7 +194,9 @@ SIMPLE_JWT = {
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    o.strip()
+    for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')
+    if o.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -197,7 +204,9 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_COOKIE_HTTPONLY = False  # 클라이언트(JS)에서 쿠키 읽기 허용 (X-CSRFToken 헤더 전송용)
 CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
+    o.strip()
+    for o in os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000').split(',')
+    if o.strip()
 ]
 
 # Frontend URL (for email links)
