@@ -20,9 +20,12 @@ from django.http import HttpResponseRedirect
 from django.conf import settings
 from accounts.views import GoogleLogin, FindUsernameView, PasswordResetConfirmRedirectView, AxesLockedLoginView, CustomPasswordResetView, clean_logout
 
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/policies/', include('policies.urls')), # 'api/' 중복 제거 (include 안에서 처리하는지 확인 필요하나 기존 유지)
+    path('api/policies/', include('policies.urls')),
+    path('api/temp_meta/', include('policies.temp_urls')),  # Temp for debugging
     path('api/accounts/', include('accounts.urls')), # 기존 커스텀 (유지)
     
     # dj-rest-auth & allauth

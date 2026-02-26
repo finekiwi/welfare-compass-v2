@@ -267,3 +267,9 @@ class MapPOIViewSet(viewsets.ReadOnlyModelViewSet):
         if theme_id:
             queryset = queryset.filter(theme__theme_id=theme_id)
         return queryset
+
+from django.http import JsonResponse
+import urllib.request
+import ssl
+import json
+from .models import MapTheme

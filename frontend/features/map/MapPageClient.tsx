@@ -12,15 +12,19 @@ const APP_KEY_EXISTS = !!process.env.NEXT_PUBLIC_KAKAO_MAP_API_KEY;
 export function MapPageClient() {
     // 상태 관리
     const [center, setCenter] = useState<Location>({ lat: 37.5665, lng: 126.9780 }); // 기본: 서울시청
-    const [filter, setFilter] = useState<MapFilterState>({ category: "전체", search: "" });
+    const [filter, setFilter] = useState<MapFilterState>({ category: "[동행]한 곳에 담은 청년공간", search: "" });
     const [selectedFacility, setSelectedFacility] = useState<string | null>(null);
+    const [myLocation, setMyLocation] = useState<Location | null>(null);
 
     // 데이터 상태
     const [facilities, setFacilities] = useState<MapFacility[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // 카테고리 목록
-    const categories = ["전체", "청년센터"]; // API 데이터는 대부분 청년센터임
+    // 동적 카테고리 목록 추출
+    const categories = useMemo(() => {
+        const uniqueCategories = new Set(facilities.map(fac => fac.category).filter(Boolean));
+        return ["전체", "청년센터", ...Array.from(uniqueCategories).filter(c => c !== "청년센터")];
+    }, [facilities]);
 
     // 데이터 로드
     // 데이터 로드
@@ -50,7 +54,7 @@ export function MapPageClient() {
             const poiFacilities: MapFacility[] = pois.map(p => ({
                 id: `poi-${p.id}`,
                 name: p.name,
-                category: "기타", // map.types.ts에 있는 카테고리 중 선택 (또는 타입 확장 필요)
+                category: p.theme_name || "기타", // 테마 이름을 카테고리로 사용
                 location: {
                     lat: p.latitude,
                     lng: p.longitude,
@@ -58,6 +62,10 @@ export function MapPageClient() {
                 address: p.address,
                 phone: p.phone,
                 url: p.detail_url,
+                cot_conts_id: p.cot_conts_id,
+                cot_theme_id: p.cot_theme_id,
+                cot_theme_sub_id: p.cot_theme_sub_id,
+                theme_icon_url: p.theme_icon_url,
                 description: p.theme_name // 테마 이름을 설명으로 사용
             }));
 
@@ -118,7 +126,11 @@ export function MapPageClient() {
                                 // 내 위치 찾기 (브라우저 API)
                                 if (navigator.geolocation) {
                                     navigator.geolocation.getCurrentPosition(
-                                        (pos) => setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                                        (pos) => {
+                                            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                                            setCenter(loc);
+                                            setMyLocation(loc);
+                                        },
                                         (err) => alert("위치 정보를 가져올 수 없습니다.")
                                     );
                                 } else {
@@ -207,6 +219,7 @@ export function MapPageClient() {
                 <section className="rounded-xl border bg-gray-50 overflow-hidden relative h-full">
                     <KakaoMap
                         center={center}
+                        myLocation={myLocation}
                         facilities={filteredFacilities}
                         selectedFacilityId={selectedFacility}
                         onMarkerClick={handleFacilityClick}

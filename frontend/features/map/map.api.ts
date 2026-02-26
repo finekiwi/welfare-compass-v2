@@ -40,7 +40,11 @@ export interface MapPOI {
     longitude: number;
     address: string;
     phone: string;
-    detail_url: string;
+    detail_url?: string;
+    cot_conts_id: string;
+    cot_theme_id: string;
+    cot_theme_sub_id: string;
+    theme_icon_url: string;
 }
 
 export async function fetchMapPOIs(themeId?: string): Promise<MapPOI[]> {

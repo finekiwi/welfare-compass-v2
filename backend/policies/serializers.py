@@ -150,6 +150,10 @@ from .models import MapPOI
 class MapPOISerializer(serializers.ModelSerializer):
     """지도 POI Serializer"""
     theme_name = serializers.CharField(source='theme.name', read_only=True)
+    cot_conts_id = serializers.SerializerMethodField()
+    cot_theme_id = serializers.SerializerMethodField()
+    cot_theme_sub_id = serializers.SerializerMethodField()
+    theme_icon_url = serializers.SerializerMethodField()
 
     class Meta:
         model = MapPOI
@@ -162,5 +166,47 @@ class MapPOISerializer(serializers.ModelSerializer):
             'longitude', 
             'address', 
             'phone', 
-            'detail_url'
+            'detail_url',
+            'cot_conts_id',
+            'cot_theme_id',
+            'cot_theme_sub_id',
+            'theme_icon_url',
+            'original_data'
         ]
+
+    def get_cot_conts_id(self, obj):
+        if isinstance(obj.original_data, dict):
+            return obj.original_data.get('COT_CONTS_ID', '')
+        return ''
+
+    def get_cot_theme_id(self, obj):
+        if isinstance(obj.original_data, dict):
+            return obj.original_data.get('COT_THEME_ID', '')
+        return ''
+
+    def get_cot_theme_sub_id(self, obj):
+        if isinstance(obj.original_data, dict):
+            return obj.original_data.get('COT_THEME_SUB_ID', '')
+        return ''
+
+    def get_theme_icon_url(self, obj):
+        try:
+            sub_id = None
+            if isinstance(obj.original_data, dict):
+                sub_id = obj.original_data.get('COT_THEME_SUB_ID')
+            
+            if sub_id and hasattr(obj, 'theme') and obj.theme and hasattr(obj.theme, 'metadata'):
+                metadata = obj.theme.metadata
+                if isinstance(metadata, dict):
+                    subcates = metadata.get('SUBCATE', [])
+                    if isinstance(subcates, list):
+                        for c in subcates:
+                            if isinstance(c, dict) and str(c.get('SUB_CATE_ID', '')) == str(sub_id):
+                                uri = c.get('SUB_CATE_IMG_URI')
+                                if uri:
+                                    if str(uri).startswith('/'):
+                                        return f"https://map.seoul.go.kr{uri}"
+                                    return str(uri)
+            return ''
+        except Exception:
+            return ''
