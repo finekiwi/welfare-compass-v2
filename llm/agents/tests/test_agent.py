@@ -234,16 +234,38 @@ class TestTools:
         assert "검색 결과: 1건" in result
     
     def test_check_eligibility_stub(self):
-        """check_eligibility stub 반환값 확인"""
+        """check_eligibility JSON 문자열 반환값 확인"""
         from llm.agents.tools import check_eligibility
+        import json
         
         result = check_eligibility.invoke({
-            "user_info": {"age": 27},
-            "policy_ids": None
+            "policies": json.dumps(
+                [
+                    {
+                        "policy_id": "T001",
+                        "title": "테스트 정책",
+                        "age_min": 19,
+                        "age_max": 39,
+                        "income_level": "0043001",
+                        "district": "서울",
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+            "user_info": json.dumps(
+                {
+                    "age": 27,
+                    "income": 2400,
+                    "residence": "강남구",
+                },
+                ensure_ascii=False,
+            ),
         })
         
-        assert isinstance(result, list)
-        assert len(result) > 0
+        assert isinstance(result, str)
+        parsed = json.loads(result)
+        assert isinstance(parsed, list)
+        assert len(parsed) == 1
 
 
 # ============================================================================
