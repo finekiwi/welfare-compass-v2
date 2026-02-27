@@ -4,11 +4,11 @@ from django.db.models import Q
 # 키: frontend category key
 # 값: Django Q object for filtering Policy model
 FRONTEND_CATEGORY_MAP = {
-    'job': Q(category__contains='일자리'),
-    'housing': Q(category__contains='주거'),
-    'education': Q(category__contains='교육'),
-    'welfare': Q(category__contains='복지') | Q(category__contains='문화') | Q(category__contains='금융'),
-    'participation': Q(category__contains='참여') | Q(category__contains='권리'),
+    'job': Q(category__in=['일자리']),
+    'housing': Q(category__in=['주거']),
+    'education': Q(category__in=['교육']),
+    'welfare': Q(category__in=['복지문화', '복지', '문화', '금융']),
+    'participation': Q(category__in=['참여권리', '참여', '권리']),
 }
 
 # [참고] 백엔드에 저장된 실제 lclsfNm (category):

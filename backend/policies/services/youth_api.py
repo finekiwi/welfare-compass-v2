@@ -1,13 +1,16 @@
 import requests
+import logging
 import xml.etree.ElementTree as ET
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _get_fallback_data():
     """
     # 출처: 청년몽땅정보통 (youth.seoul.go.kr), 서울광역청년센터 + 16개 지역 청년센터
     """
-    print("DEBUG: Using inline Seoul youth center data (17 centers)")
+    logger.info("Using inline Seoul youth center fallback data (17 centers)")
     return [
         # 서울광역청년센터
         {
@@ -183,7 +186,7 @@ def _get_fallback_data():
         },
     ]
 
-def get_youth_centers(page=1, size=10, search=None):
+def get_youth_centers(page=1, size=10):
     """
     온통청년 청년센터 API 호출
     """
@@ -228,7 +231,7 @@ def get_youth_centers(page=1, size=10, search=None):
             
             # [BRAIN4-Map] API가 빈 데이터를 반환하는 경우 (cntrNm이 None) 폴백 데이터 사용
             if items and items[0].get('cntrNm') is None:
-                print("DEBUG: API returned null data, using fallback mock data")
+                logger.warning("API returned null data (cntrNm=None), using fallback")
                 return _get_fallback_data()
             
             return items if items else []
@@ -250,9 +253,9 @@ def get_youth_centers(page=1, size=10, search=None):
                     centers.append(center)
                 return centers
             except Exception:
-                print(f"DEBUG: XML parsing also failed for {response.text[:100]}")
-                return []
+                logger.warning("XML parsing also failed: %s", response.text[:100])
+                return _get_fallback_data()  # XML도 실패 시 fallback 사용
             
     except Exception as e:
-        print(f"Youth API Error: {e}")
-        return []
+        logger.error("Youth API Error: %s", e)
+        return _get_fallback_data()  # 네트워크 에러 시에도 fallback 데이터 반환

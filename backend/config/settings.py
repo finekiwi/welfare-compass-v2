@@ -170,6 +170,9 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'config.exceptions.custom_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 12,
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',  # 비로그인 사용자 시간당 100회 제한 (CenterViewSet 외부 API 보호)
+    },
 }
 
 from datetime import timedelta

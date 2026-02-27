@@ -19,6 +19,7 @@ data/backup_291_policies.json
 # 백업 파일
 *_backups.py
 *_backup.py
+*.bak.*
 
 # 테스트 파일
 test.py

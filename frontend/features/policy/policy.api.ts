@@ -152,7 +152,7 @@ export async function fetchPolicies(
       params: {
         search: params?.q,
         category: params?.category === "all" ? undefined : params?.category,
-        region: params?.region,
+        district: params?.region,  // [FIX] 백엔드 filterset_fields는 'district' 사용
         page: params?.page || 1,
         page_size: params?.page_size || 12, // ✅ 페이지 크기 파라미터 적용
       },

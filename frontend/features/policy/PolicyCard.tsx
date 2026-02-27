@@ -25,7 +25,7 @@ export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
               1순위
             </span>
           )}
-          {(policy.categories || [policy.category]).map((cat) => (
+          {(policy.categories?.length ? policy.categories : [policy.category]).map((cat) => (
             <span
               key={cat}
               className="inline-flex items-center rounded-full border bg-white px-3 py-1 text-xs font-semibold text-gray-900"

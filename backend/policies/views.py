@@ -2,12 +2,13 @@ from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.pagination import PageNumberPagination
 from django.core.paginator import Paginator, EmptyPage
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, timedelta
-from .models import Policy, Category
-from .serializers import PolicyListSerializer, PolicyDetailSerializer, CategorySerializer
+from .models import Policy, Category, MapPOI
+from .serializers import PolicyListSerializer, PolicyDetailSerializer, CategorySerializer, MapPOISerializer
 # [BRAIN4-31] 회원용/챗봇용 분리
 from .services.matching import match_policies_for_web
 from .services.youth_api import get_youth_centers  # [BRAIN4-Map] 온통청년 API 서비스
@@ -175,9 +176,16 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         exclude_str = request.query_params.get('exclude', '')
         exclude_ids = [x.strip() for x in exclude_str.split(',') if x.strip()]
 
-        # 페이지네이션 파라미터
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 12))
+        # 페이지네이션 파라미터 (잘못된 값 방어)
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (ValueError, TypeError):
+            page = 1
+
+        try:
+            page_size = max(1, min(int(request.query_params.get('page_size', 12)), 100))
+        except (ValueError, TypeError):
+            page_size = 12
 
         # [BRAIN4-31] 전체 정책 매칭 (점수순 정렬됨)
         results = match_policies_for_web(
@@ -231,13 +239,21 @@ class CenterViewSet(viewsets.ViewSet):
     청년센터/공간 조회 API (온통청년 API 연동)
     - GET /api/centers/
     """
+    throttle_classes = [AnonRateThrottle]  # [FIX] 외부 API rate limit 방어
+
     def list(self, request):
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        search = request.query_params.get('search', None)
-        
+        try:
+            page = max(1, int(request.query_params.get('page', 1)))
+        except (ValueError, TypeError):
+            page = 1
+
+        try:
+            page_size = max(1, min(int(request.query_params.get('page_size', 10)), 100))
+        except (ValueError, TypeError):
+            page_size = 10
+
         # 온통청년 API 호출
-        data = get_youth_centers(page=page, size=page_size, search=search)
+        data = get_youth_centers(page=page, size=page_size)
         
         # 외부 API라 total count를 정확히 알기 어려울 수 있음 (API 응답에 따라 다름)
         # 일단 리스트 반환. 필요시 포맷팅.
@@ -248,9 +264,6 @@ class CenterViewSet(viewsets.ViewSet):
         })
 
 
-from .models import MapPOI
-from .serializers import MapPOISerializer
-
 class MapPOIViewSet(viewsets.ReadOnlyModelViewSet):
     """
     지도 POI 조회 API
@@ -259,7 +272,7 @@ class MapPOIViewSet(viewsets.ReadOnlyModelViewSet):
     """
     queryset = MapPOI.objects.select_related('theme').all()
     serializer_class = MapPOISerializer
-    pagination_class = None # 지도는 한 번에 다 불러오는 경우가 많음 (또는 클라이언트 사이드 클러스터링)
+    pagination_class = None  # 지도는 한 번에 다 불러오는 경우가 많음 (또는 클라이언트 사이드 클러스터링)
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -267,9 +280,3 @@ class MapPOIViewSet(viewsets.ReadOnlyModelViewSet):
         if theme_id:
             queryset = queryset.filter(theme__theme_id=theme_id)
         return queryset
-
-from django.http import JsonResponse
-import urllib.request
-import ssl
-import json
-from .models import MapTheme

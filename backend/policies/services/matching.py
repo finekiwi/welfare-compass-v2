@@ -170,12 +170,14 @@ def _match_policies_core(
     scored_policies.sort(key=lambda x: -x[1])
 
     # Step 6: 카테고리별 분산 선택
-    # [BRAIN4-35] 웹 전체보기(limit=None)일 경우 카테고리별 제한 해제 (다양성보다는 모든 매칭 결과 반환이 목적)
-    max_per_cat = 2
     if limit is None:
-        max_per_cat = 1000  # 사실상 제한 없음
-
-    final_results = _select_diverse_categories(scored_policies, max_per_category=max_per_cat, limit=limit)
+        # [BRAIN4-35] 전체보기: 다양성 선택 스킵, 점수순 전체 반환 (페이지네이션은 뷰에서 처리)
+        final_results = scored_policies
+    else:
+        # 챗봇/홈 추천: 카테고리별 분산 선택 적용
+        final_results = _select_diverse_categories(
+            scored_policies, max_per_category=max_per_category, limit=limit
+        )
 
     return final_results
 
