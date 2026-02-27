@@ -64,6 +64,45 @@ class TestParseJsonResponse:
         result = _parse_json_response("{invalid-json")
         assert result == _empty_result()
 
+    def test_core_field_type_mismatch_fallback(self):
+        from llm.agents.tools.extract_info import _parse_json_response
+
+        raw = json.dumps(
+            {
+                "age": "27",
+                "residence": 123,
+                "employment_status": "구직중",
+                "income_raw": None,
+                "household_size": None,
+                "housing_type": None,
+                "interests": "취업",
+                "special_conditions": [],
+            },
+            ensure_ascii=False,
+        )
+        result = _parse_json_response(raw)
+        assert result["age"] is None
+        assert result["residence"] is None
+        assert result["interests"] == []
+
+    def test_interests_missing_keeps_none(self):
+        from llm.agents.tools.extract_info import _parse_json_response
+
+        raw = json.dumps(
+            {
+                "age": 27,
+                "residence": "강남구",
+                "employment_status": "구직중",
+                "income_raw": None,
+                "household_size": None,
+                "housing_type": None,
+                "special_conditions": [],
+            },
+            ensure_ascii=False,
+        )
+        result = _parse_json_response(raw)
+        assert result["interests"] is None
+
 
 # ============================================================================
 # Unit: 후처리 (_post_process)
@@ -114,6 +153,23 @@ class TestPostProcessResidence:
         payload["residence"] = "제주도"
         result = _post_process(payload)
         assert result["residence"] is None
+
+    @pytest.mark.parametrize(
+        "raw_residence,expected",
+        [
+            ("목동", "양천구"),
+            ("창동", "도봉구"),
+            ("서울대입구", "관악구"),
+            ("서울대입구 근처", "관악구"),
+        ],
+    )
+    def test_residence_preprocess_order_regression(self, raw_residence: str, expected: str):
+        from llm.agents.tools.extract_info import _empty_result, _post_process
+
+        payload = _empty_result()
+        payload["residence"] = raw_residence
+        result = _post_process(payload)
+        assert result["residence"] == expected
 
 
 class TestPostProcessEmployment:
@@ -168,6 +224,7 @@ class TestPostProcessIncome:
             ("월 200만원", "월 200만원 벌어요", 2400),
             ("월급 180", "월급 180 받아요", 2160),
             ("월 500만원", "월 500만원 벌어요", 6000),
+            ("월 1500", "월 1500 벌어", 18000),
             ("연봉 3000만원", "연봉 3000만원이에요", 3000),
             ("연소득 2400", "연소득 2400이에요", 2400),
             (None, "소득 없어요", None),
@@ -296,11 +353,19 @@ class TestPostProcessIncomeAgeInterests:
         result = _post_process(payload)
         assert result["interests"] == []
 
-    def test_interests_message_deduplicates_job_family(self):
+    def test_interests_explicit_empty_kept_without_fallback(self):
         from llm.agents.tools.extract_info import _empty_result, _post_process
 
         payload = _empty_result()
         payload["interests"] = []
+        result = _post_process(payload, message="취업하고 창업")
+        assert result["interests"] == []
+
+    def test_interests_missing_fallback_deduplicates_job_family(self):
+        from llm.agents.tools.extract_info import _empty_result, _post_process
+
+        payload = _empty_result()
+        payload["interests"] = None
         result = _post_process(payload, message="취업하고 창업")
         assert result["interests"] == ["일자리"]
 
@@ -320,7 +385,7 @@ class TestExtractInfoTool:
             "_extract_with_llm",
             return_value=json.dumps(
                 {
-                    "age": "27",
+                    "age": 27,
                     "residence": "홍대",
                     "employment_status": "취준생",
                     "income_raw": "월 200만원",
@@ -385,13 +450,14 @@ class TestHardEdgeCasesMock:
     def test_tool_handles_birth_year_and_zodiac_noise(self):
         """예: '58년생 개띠 왕십리살아' 같은 난해한 입력 처리."""
         extract_info_module = importlib.import_module("llm.agents.tools.extract_info")
+        expected_age = datetime.now().year - 1958 - 1
 
         with patch.object(
             extract_info_module,
             "_extract_with_llm",
             return_value=json.dumps(
                 {
-                    "age": "58년생",
+                    "age": expected_age,
                     "residence": "왕십리",
                     "employment_status": None,
                     "income_raw": None,
@@ -404,7 +470,6 @@ class TestHardEdgeCasesMock:
             ),
         ):
             result = extract_info_module.extract_info_full("58년생 개띠 왕십리살아")
-            expected_age = datetime.now().year - 1958 - 1
 
             assert result["age"] == expected_age
             assert result["residence"] == "성동구"
@@ -448,7 +513,7 @@ class TestHardEdgeCasesMock:
             "_extract_with_llm",
             return_value=json.dumps(
                 {
-                    "age": "33세",
+                    "age": 33,
                     "residence": "강남구청",
                     "employment_status": "회사 다님",
                     "income_raw": "연봉 3000만원",
@@ -559,7 +624,8 @@ def test_integration_case_4():
     message = "97년생 대학원생이고 성수동 살아"
     result = _full(message)
     _debug_dump("integration_case_4", message, result)
-    assert result["age"] == 28
+    expected_age = datetime.now().year - 1997 - 1
+    assert result["age"] == expected_age
     assert result["residence"] == "성동구"
     assert result["employment_status"] == "학생"
 

@@ -40,6 +40,7 @@ DEFAULT_TEMPERATURE = 0.0
 
 logger = logging.getLogger(__name__)
 
+# import 시점에 1회만 평가되며, 런타임 중 환경변수를 재조회하지 않습니다.
 DEBUG_EXTRACT_INFO_RAW = os.getenv("DEBUG_EXTRACT_INFO_RAW", "").lower() in {
     "1",
     "true",
@@ -62,7 +63,7 @@ class ExtractResult(TypedDict):
     income_raw: str | None
     household_size: int | None
     housing_type: str | None
-    interests: list[str]
+    interests: list[str] | None
     special_conditions: list[str]
 
 
@@ -290,6 +291,7 @@ EMPLOYMENT_NORMALIZE = {
 }
 
 # 보건복지부 연도별 기준중위소득(월, 원) - 1~7인 가구
+# 매년 1월 보건복지부 고시 기준 수동 갱신 필요
 MEDIAN_INCOME_WON_BY_YEAR: dict[int, dict[int, int]] = {
     2021: {
         1: 1827831,
@@ -466,7 +468,8 @@ def _extract_with_llm(
         message: 사용자 발화
         model: LLM 모델명
         temperature: LLM 온도
-        use_short_prompt: 짧은 프롬프트 사용 여부
+        use_short_prompt: 토큰 절약용 축약 프롬프트 사용 여부
+            (운영 미사용, 평가/비교 실험용)
 
     Returns:
         LLM 원시 응답 문자열
@@ -539,16 +542,24 @@ def _parse_json_response(raw_response: str) -> ExtractResult:
             return _empty_result()
 
         result = _empty_result()
-        result["age"] = cast(int | None, payload.get("age"))
-        result["residence"] = cast(str | None, payload.get("residence"))
+
+        raw_age = payload.get("age")
+        result["age"] = raw_age if isinstance(raw_age, int) and not isinstance(raw_age, bool) else None
+
+        raw_residence = payload.get("residence")
+        result["residence"] = raw_residence if isinstance(raw_residence, str) else None
+
         result["employment_status"] = cast(str | None, payload.get("employment_status"))
         result["income"] = cast(int | None, payload.get("income"))
         result["income_raw"] = cast(str | None, payload.get("income_raw"))
         result["household_size"] = cast(int | None, payload.get("household_size"))
         result["housing_type"] = cast(str | None, payload.get("housing_type"))
 
-        interests = payload.get("interests", [])
-        result["interests"] = interests if isinstance(interests, list) else []
+        raw_interests = payload.get("interests") if "interests" in payload else None
+        if raw_interests is None:
+            result["interests"] = None
+        else:
+            result["interests"] = raw_interests if isinstance(raw_interests, list) else []
         conditions = payload.get("special_conditions", [])
         result["special_conditions"] = conditions if isinstance(conditions, list) else []
         return result
@@ -597,6 +608,7 @@ def _normalize_age(value: Any) -> int | None:
                     if birth_year < 100:
                         pivot = current_year % 100
                         birth_year = 2000 + birth_year if birth_year <= pivot else 1900 + birth_year
+                    # 정책: 생일 미경과를 가정한 보수 추정으로 1세 차감
                     candidate = current_year - birth_year - 1
                 else:
                     age_match = re.search(r"-?\d{1,3}", text)
@@ -635,23 +647,37 @@ def _normalize_residence(value: Any) -> str | None:
     if not text:
         return None
 
-    compact = _normalize_location_token(text)
-    if compact in SEOUL_DISTRICTS:
-        return compact
+    def _resolve_compact_location(compact: str) -> str | None:
+        if not compact:
+            return None
+        if compact in SEOUL_DISTRICTS:
+            return compact
+        if compact in DONG_TO_GU:
+            return DONG_TO_GU[compact]
+        if compact in DISTRICT_ROOT_TO_FULL:
+            return DISTRICT_ROOT_TO_FULL[compact]
 
-    for district in SEOUL_DISTRICTS:
-        if district in compact:
-            return district
+        for district in SEOUL_DISTRICTS:
+            if district in compact:
+                return district
+        for dong in sorted(DONG_TO_GU.keys(), key=len, reverse=True):
+            if dong in compact:
+                return DONG_TO_GU[dong]
 
-    if compact in DONG_TO_GU:
-        return DONG_TO_GU[compact]
+        candidate = f"{compact}구"
+        if candidate in SEOUL_DISTRICTS:
+            return candidate
+        return None
 
-    if compact in DISTRICT_ROOT_TO_FULL:
-        return DISTRICT_ROOT_TO_FULL[compact]
+    raw_compact = re.sub(r"\s+", "", text)
+    resolved = _resolve_compact_location(raw_compact)
+    if resolved:
+        return resolved
 
-    candidate = f"{compact}구"
-    if candidate in SEOUL_DISTRICTS:
-        return candidate
+    cleaned_compact = _normalize_location_token(text)
+    resolved = _resolve_compact_location(cleaned_compact)
+    if resolved:
+        return resolved
 
     return None
 
@@ -722,7 +748,9 @@ def _resolve_household_size(household_size: int | None) -> int:
     return min(max(1, household_size), 7)
 
 
-def _extract_monthly_income_manwon(text: str) -> float | None:
+def _extract_monthly_income_manwon(
+    text: str, *, assume_manwon_without_unit: bool = False
+) -> float | None:
     """자연어에서 월소득을 추정해 만원 단위로 반환합니다."""
 
     if not text:
@@ -750,6 +778,9 @@ def _extract_monthly_income_manwon(text: str) -> float | None:
         if unit == "won":
             return amount / 10000.0
 
+        if assume_manwon_without_unit:
+            return amount
+
         # 단위 미표기: 관용적으로 1000 이하면 만원 단위로 해석
         if amount <= 1000:
             return amount
@@ -758,7 +789,9 @@ def _extract_monthly_income_manwon(text: str) -> float | None:
     return None
 
 
-def _extract_annual_income_manwon(text: str) -> float | None:
+def _extract_annual_income_manwon(
+    text: str, *, assume_manwon_without_unit: bool = False
+) -> float | None:
     """자연어에서 연소득을 추정해 만원 단위로 반환합니다."""
 
     if not text:
@@ -783,6 +816,9 @@ def _extract_annual_income_manwon(text: str) -> float | None:
             return amount
         if unit == "won":
             return amount / 10000.0
+
+        if assume_manwon_without_unit:
+            return amount
 
         # 단위 미표기: 일반적인 연봉 표기(3000, 4200)는 만원 단위로 해석
         if amount <= 10000:
@@ -838,6 +874,9 @@ def _extract_median_income_ratio(text: str) -> float | None:
         return None
 
     compact = re.sub(r"\s+", "", text).replace("중위소득", "중위")
+    # TODO: 중위소득 비율 일반화 시
+    # - "중위(소득)" 문맥 앵커 필수 유지
+    # - 유효범위 가드(30~200%) + 노이즈 케이스 테스트 동반
     match = re.search(r"중위(?:\D{0,4})?(50|100|150)%?", compact)
     if not match:
         return None
@@ -888,6 +927,24 @@ def _normalize_income(
         inferred_year = _extract_reference_year(candidate)
         if inferred_year is not None:
             break
+
+    for candidate in candidates:
+        if re.search(r"(?:월|달|한달|한\s*달|월급|급여|매달)", candidate):
+            monthly_income = _extract_monthly_income_manwon(
+                candidate,
+                assume_manwon_without_unit=True,
+            )
+            if monthly_income is not None and monthly_income >= 0:
+                return int(round(monthly_income * 12))
+
+    for candidate in candidates:
+        if re.search(r"(?:연봉|연소득|연수입|연\s*소득|연\s*수입)", candidate):
+            annual_income = _extract_annual_income_manwon(
+                candidate,
+                assume_manwon_without_unit=True,
+            )
+            if annual_income is not None and annual_income >= 0:
+                return int(round(annual_income))
 
     for candidate in candidates:
         annual_income = _extract_annual_income_manwon(candidate)
@@ -1113,8 +1170,9 @@ def _post_process(result: ExtractResult, message: str | None = None) -> ExtractR
     if normalized["household_size"] is None and isinstance(message, str) and message.strip():
         normalized["household_size"] = _extract_household_size(message)
 
-    interests = _normalize_interests(result.get("interests"))
-    if not interests and isinstance(message, str) and message.strip():
+    raw_interests = result.get("interests")
+    interests = _normalize_interests(raw_interests)
+    if raw_interests is None and isinstance(message, str) and message.strip():
         interests = _infer_interests_from_message(message)
     normalized["interests"] = interests
 
@@ -1159,7 +1217,8 @@ def extract_info_full(
         message: 사용자 발화
         model: 사용할 LLM 모델
         temperature: LLM 온도
-        use_short_prompt: 짧은 프롬프트 사용 여부
+        use_short_prompt: 토큰 절약용 축약 프롬프트 사용 여부
+            (운영 미사용, 평가/비교 실험용)
 
     Returns:
         정규화된 ExtractResult
