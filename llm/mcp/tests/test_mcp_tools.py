@@ -11,6 +11,7 @@ from llm.mcp.tools.search import search_policies_tool
 
 
 class SearchPoliciesToolTests(unittest.TestCase):
+    @patch("llm.mcp.tools.search._run_bm25_docs")
     @patch("llm.mcp.tools.search.rewrite_query_tool")
     @patch("llm.mcp.tools.search._fetch_policies_by_ids")
     @patch("llm.mcp.tools.search._run_search_docs")
@@ -19,8 +20,10 @@ class SearchPoliciesToolTests(unittest.TestCase):
         mock_run_search_docs,
         mock_fetch_policies_by_ids,
         mock_rewrite_query_tool,
+        mock_run_bm25_docs,
     ):
         mock_rewrite_query_tool.return_value = "청년 주거 지원"
+        mock_run_bm25_docs.return_value = []
         # retriever/reranker 순서: P2 -> P1
         mock_run_search_docs.return_value = [
             SimpleNamespace(
@@ -45,7 +48,9 @@ class SearchPoliciesToolTests(unittest.TestCase):
         self.assertEqual(result["policies"][0]["policy_id"], "P2")
         self.assertEqual(result["policies"][1]["policy_id"], "P1")
         self.assertEqual(result["policies"][0]["source"], "postgres")
+        mock_run_bm25_docs.assert_not_called()
 
+    @patch("llm.mcp.tools.search._run_bm25_docs")
     @patch("llm.mcp.tools.search.rewrite_query_tool")
     @patch("llm.mcp.tools.search._fetch_policies_by_ids")
     @patch("llm.mcp.tools.search._run_search_docs")
@@ -54,8 +59,10 @@ class SearchPoliciesToolTests(unittest.TestCase):
         mock_run_search_docs,
         mock_fetch_policies_by_ids,
         mock_rewrite_query_tool,
+        mock_run_bm25_docs,
     ):
         mock_rewrite_query_tool.return_value = "청년"
+        mock_run_bm25_docs.return_value = []
         mock_run_search_docs.return_value = [
             SimpleNamespace(
                 metadata={
@@ -74,6 +81,43 @@ class SearchPoliciesToolTests(unittest.TestCase):
         self.assertEqual(result["result_count"], 1)
         self.assertEqual(result["policies"][0]["policy_id"], "P404")
         self.assertEqual(result["policies"][0]["source"], "retriever_fallback")
+        mock_run_bm25_docs.assert_called_once()
+
+    @patch("llm.mcp.tools.search._run_bm25_docs")
+    @patch("llm.mcp.tools.search.rewrite_query_tool")
+    @patch("llm.mcp.tools.search._fetch_policies_by_ids")
+    @patch("llm.mcp.tools.search._run_search_docs")
+    def test_search_policies_tool_prefers_bm25_records_when_postgres_hits_are_low(
+        self,
+        mock_run_search_docs,
+        mock_fetch_policies_by_ids,
+        mock_rewrite_query_tool,
+        mock_run_bm25_docs,
+    ):
+        mock_rewrite_query_tool.return_value = "청년 월세 지원"
+        mock_run_search_docs.return_value = [
+            SimpleNamespace(
+                metadata={"plcyNo": "P_OLD", "plcyNm": "오래된 정책"},
+                page_content="오래된 본문",
+            ),
+        ]
+        mock_run_bm25_docs.return_value = [
+            SimpleNamespace(
+                metadata={"plcyNo": "P_NEW", "plcyNm": "최신 정책"},
+                page_content="최신 본문",
+            ),
+        ]
+        mock_fetch_policies_by_ids.side_effect = [
+            {},  # 1차(메인 retriever) miss
+            {"P_NEW": {"policy_id": "P_NEW", "title": "DB최신정책", "full_text": "DB", "source": "postgres"}},
+        ]
+
+        result = search_policies_tool(query="월세", top_k=1)
+
+        self.assertEqual(result["result_count"], 1)
+        self.assertEqual(result["policies"][0]["policy_id"], "P_NEW")
+        self.assertEqual(result["policies"][0]["source"], "postgres")
+        mock_run_bm25_docs.assert_called_once()
 
 
 class RagPipelineToolTests(unittest.TestCase):

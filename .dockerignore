@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+.claude
+*.egg-info
+__pycache__
+*.pyc
+node_modules
+.next
+infra/
+test/
+*.md
+!README.md

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from datetime import datetime
@@ -141,7 +142,7 @@ class PolicyExtractor:
         latest_path = self.RAW_DATA_DIR / 'seoul_policies.json'
         if latest_path.exists() or latest_path.is_symlink():
             latest_path.unlink()
-        latest_path.symlink_to(filename)
+        shutil.copy2(json_path, latest_path)
         
         return json_path
 
