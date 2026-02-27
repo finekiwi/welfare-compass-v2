@@ -52,6 +52,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # MCP Server (SSE)
+  # GPU 필수: NVIDIA GPU가 없는 환경(Mac 등)에서는 deploy.resources 블록을 제거하거나
+  # docker compose --profile gpu 로 분리해서 사용하세요.
   # ---------------------------------------------------------------------------
   mcp:
     build:
@@ -77,11 +79,11 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: all
     healthcheck:
-      test: ["CMD-SHELL", "curl -so /dev/null -w '%{http_code}' --max-time 3 http://localhost:8001/sse | grep -q 200"]
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('localhost',8001),2); s.close()\""]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 30s
     networks:
       - welfare-net
 
