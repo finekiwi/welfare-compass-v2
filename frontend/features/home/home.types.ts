@@ -18,6 +18,6 @@ export const HOME_CATEGORIES: HomeCategory[] = [
     { key: "job", label: "일자리", icon: "/icons/home/job.png", iconSize: 65 },
     { key: "housing", label: "주거", icon: "/icons/home/housing.png", iconSize: 65 },
     { key: "education", label: "교육", icon: "/icons/home/entrepreneurship.png", iconSize: 66 },
-    { key: "welfare", label: "복지·문화", icon: "/icons/home/finance.png", iconSize: 65 },
-    { key: "participation", label: "참여·권리", icon: "/icons/home/care-protection.png", iconSize: 40 },
+    { key: "welfare", label: "복지·문화", icon: "/icons/home/emotional-wellbeing.png", iconSize: 52 },
+    { key: "participation", label: "참여·권리", icon: "/icons/home/participation.png", iconSize: 60 },
 ];

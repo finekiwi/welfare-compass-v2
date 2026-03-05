@@ -20,10 +20,12 @@ class PolicyListSerializer(serializers.ModelSerializer):
     """목록용 - 간략한 정보 (프론트 호환: 옛 필드명 유지)"""
     plcy_no = serializers.CharField(source='policy_id')  # [RENAME] model: policy_id → API: plcy_no
     plcy_nm = serializers.CharField(source='title')  # [RENAME] model: title → API: plcy_nm
+    aply_start_dt = serializers.DateField(source='apply_start_date')  # [ADD] 신청시작일
     aply_end_dt = serializers.DateField(source='apply_end_date')  # [RENAME] model: apply_end_date → API: aply_end_dt
     plcy_expln_cn = serializers.CharField(source='description')  # [RENAME] model: description → API: plcy_expln_cn
     plcy_sprt_cn = serializers.CharField(source='support_content')  # [RENAME] model: support_content → API: plcy_sprt_cn
     categories = CategorySerializer(many=True, read_only=True)
+    poster_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Policy
@@ -31,11 +33,21 @@ class PolicyListSerializer(serializers.ModelSerializer):
             'plcy_no',
             'plcy_nm',
             'district',
+            'aply_start_dt',
             'aply_end_dt',
             'categories',
             'plcy_expln_cn',
             'plcy_sprt_cn',
+            'poster_url',
         ]
+
+    def get_poster_url(self, obj):
+        if obj.poster:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.poster.url)
+            return obj.poster.url
+        return None
 
 
 class PolicyDetailSerializer(serializers.ModelSerializer):
@@ -63,6 +75,7 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
     frst_reg_dt = serializers.DateTimeField(source='created_at')
     last_mdfcn_dt = serializers.DateTimeField(source='updated_at')
     categories = CategorySerializer(many=True, read_only=True)
+    poster_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Policy
@@ -91,13 +104,22 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
             'categories',
             'frst_reg_dt',
             'last_mdfcn_dt',
-            # Boolean 필드 (이미 영문, 변경 없음)
+            # Boolean fields
             'sbiz_cd',
             'is_for_single_parent',
             'is_for_disabled',
             'is_for_low_income',
             'is_for_newlywed',
+            'poster_url',
         ]
+
+    def get_poster_url(self, obj):
+        if obj.poster:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.poster.url)
+            return obj.poster.url
+        return None
 
 
 # =============================================================================
@@ -123,7 +145,7 @@ class CalendarEventSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Policy
-        fields = ['plcy_no', 'plcy_nm', 'aplyYmd', 'bizPrdBgngYmd', 'bizPrdEndYmd']
+        fields = ['plcy_no', 'plcy_nm', 'aplyYmd', 'bizPrdBgngYmd', 'bizPrdEndYmd', 'category']
 
     def get_aplyYmd(self, obj):
         """신청기간: "YYYYMMDD ~ YYYYMMDD" 형식"""

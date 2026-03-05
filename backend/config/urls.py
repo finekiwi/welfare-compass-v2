@@ -58,3 +58,8 @@ urlpatterns = [
 
     path('api/v1/chat/', include('chat.urls')),  # [BRAIN4-20] Chat API
 ]
+
+# 개발 환경: media 파일 서빙 (운영에서는 Nginx/CDN 사용)
+if settings.DEBUG:
+    from django.conf.urls.static import static
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

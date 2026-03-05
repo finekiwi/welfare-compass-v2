@@ -43,8 +43,8 @@ export function UserMenu() {
     }
 
     return (
-        <div className="flex items-center gap-1 md:gap-3 text-xs md:text-sm">
-            <Link href="/login" className="text-gray-900 hover:text-black">
+        <div className="flex items-center gap-1 md:gap-3 text-[12px] md:text-[13px]">
+            <Link href="/login" className="rounded-md px-1 md:px-1 py-1.5 text-gray-700 transition hover:text-black">
                 로그인
             </Link>
 
@@ -52,7 +52,7 @@ export function UserMenu() {
 
             <Link
                 href="/signup"
-                className="rounded-md px-1 md:px-2 py-1.5 font-medium text-gray-700 transition hover:text-black"
+                className="rounded-md px-1 md:px-1 py-1.5 text-gray-700 transition hover:text-black"
             >
                 회원가입
             </Link>

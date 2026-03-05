@@ -19,11 +19,14 @@ export type Policy = {
   period: string;
   criteria: string;
   content: string;
+  posterUrl?: string | null;
   isPriority?: boolean;
   isYouth?: boolean;
   aplyYmd?: string;
   bizPrdBgngYmd?: string;
   bizPrdEndYmd?: string;
+  applyStartDate?: string | null;
+  applyEndDate?: string | null;
 };
 
 // ✅ 상세 페이지용 전체 필드 타입
@@ -62,7 +65,8 @@ export type PolicyDetail = {
   // 메타
   createdAt: string | null; // frst_reg_dt
   updatedAt: string | null; // last_mdfcn_dt
+  posterUrl?: string | null; // poster_url
 };
 
 // ✅ 카드(UI)에 필요한 최소 필드만 뽑은 타입
-export type PolicyCardItem = Pick<Policy, "id" | "title" | "summary" | "region" | "category" | "categories" | "isPriority" | "content">;
+export type PolicyCardItem = Pick<Policy, "id" | "title" | "summary" | "region" | "category" | "categories" | "isPriority" | "content" | "posterUrl" | "applyStartDate" | "applyEndDate">;

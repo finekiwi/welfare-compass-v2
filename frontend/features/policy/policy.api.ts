@@ -1,6 +1,7 @@
 // features/policy/policy.api.ts
 import { api } from "@/services/axios";
 import type { Policy, PolicyCategory, PolicyCardItem, PolicyDetail } from "./policy.types";
+import { CATEGORY_NAME_MAP } from "./policy.constants";
 
 export type PolicySearchParams = {
   q?: string;
@@ -8,6 +9,18 @@ export type PolicySearchParams = {
   region?: string;
   page?: number;
   page_size?: number;
+  // 고급 필터
+  subcategory?: string;
+  employment_status?: string;
+  education_status?: string;
+  marriage_status?: string;
+  age?: number;
+  is_for_single_parent?: boolean;
+  is_for_disabled?: boolean;
+  is_for_low_income?: boolean;
+  is_for_newlywed?: boolean;
+  apply_status?: string;
+  ordering?: string;
 };
 
 // 백엔드 응답 타입
@@ -40,27 +53,15 @@ interface BackendPolicy {
   biz_prd_end_ymd?: string | null;
   district?: string;
   categories: { id: number; name: string }[];
+  poster_url?: string | null;
   frst_reg_dt?: string | null;
   last_mdfcn_dt?: string | null;
 }
 
 // 백엔드 → 프론트엔드 Policy 변환 (목록용)
 function toPolicy(bp: BackendPolicy): Policy {
-  const categoryMap: Record<string, PolicyCategory> = {
-    "일자리": "job",
-    "주거": "housing",
-    "교육": "education",
-    "복지문화": "welfare",
-    "참여권리": "participation",
-    // Fallbacks for safety or old data
-    "금융": "welfare",
-    "창업": "job",
-    "복지": "welfare",
-    "문화": "welfare",
-  };
-
   const categories: PolicyCategory[] = (bp.categories || [])
-    .map((c) => categoryMap[c.name] || "welfare")
+    .map((c) => CATEGORY_NAME_MAP[c.name] || "welfare")
     .filter((c, i, arr) => arr.indexOf(c) === i); // 중복 제거
 
   if (categories.length === 0) {
@@ -83,10 +84,15 @@ function toPolicy(bp: BackendPolicy): Policy {
     category,
     categories, // ✅ 다중 카테고리
     region: bp.district || "전국",
-    target: `${bp.sprt_trgt_min_age ?? ""}~${bp.sprt_trgt_max_age ?? ""}세` || "전 연령",
+    target: (bp.sprt_trgt_min_age != null || bp.sprt_trgt_max_age != null)
+      ? `${bp.sprt_trgt_min_age ?? ""}~${bp.sprt_trgt_max_age ?? ""}세`
+      : "전 연령",
     period,
     criteria: "별도 기준 없음",
     content: bp.plcy_sprt_cn ?? bp.plcy_expln_cn ?? "",
+    posterUrl: bp.poster_url ?? null,
+    applyStartDate: bp.aply_start_dt ?? null,
+    applyEndDate: bp.aply_end_dt ?? null,
   };
 }
 
@@ -121,6 +127,7 @@ function toPolicyDetail(bp: BackendPolicy): PolicyDetail {
 
     createdAt: bp.frst_reg_dt ?? null,
     updatedAt: bp.last_mdfcn_dt ?? null,
+    posterUrl: bp.poster_url ?? null,
   };
 }
 
@@ -135,14 +142,17 @@ function toCardItem(p: Policy): PolicyCardItem {
     categories: p.categories, // ✅ 다중 카테고리 전달
     isPriority: p.isPriority,
     content: p.content,
+    applyStartDate: p.applyStartDate,
+    applyEndDate: p.applyEndDate,
   };
 }
 
 /**
  * ✅ 검색 페이지용 정책 목록
- */
-/**
- * ✅ 검색 페이지용 정책 목록
+ *
+ * ⚠️ 에러 전략: silent fallback (빈 결과 반환)
+ * → 네트워크/API 에러 시 { policies: [], totalCount: 0 }을 반환하여
+ *   검색 결과 화면이 항상 정상 렌더링됩니다. 에러는 console.error로만 기록합니다.
  */
 export async function fetchPolicies(
   params?: PolicySearchParams
@@ -152,9 +162,21 @@ export async function fetchPolicies(
       params: {
         search: params?.q,
         category: params?.category === "all" ? undefined : params?.category,
-        district: params?.region,  // [FIX] 백엔드 filterset_fields는 'district' 사용
+        district: params?.region || undefined,
         page: params?.page || 1,
-        page_size: params?.page_size || 12, // ✅ 페이지 크기 파라미터 적용
+        page_size: params?.page_size || 12,
+        // 고급 필터
+        subcategory: params?.subcategory || undefined,
+        employment_status: params?.employment_status || undefined,
+        education_status: params?.education_status || undefined,
+        marriage_status: params?.marriage_status || undefined,
+        age: params?.age ?? undefined,
+        is_for_single_parent: params?.is_for_single_parent || undefined,
+        is_for_disabled: params?.is_for_disabled || undefined,
+        is_for_low_income: params?.is_for_low_income || undefined,
+        is_for_newlywed: params?.is_for_newlywed || undefined,
+        apply_status: params?.apply_status || undefined,
+        ordering: params?.ordering || undefined,
       },
     });
 
@@ -217,11 +239,6 @@ export async function fetchYouthPolicyCards(limit = 6): Promise<PolicyCardItem[]
       params: { search: "청년", page_size: limit },
     });
 
-    // 🛑 RAW 데이터 확인
-    if (response.data?.results?.length > 0) {
-      console.log("🔥 RAW API Response [0]:", response.data.results[0]);
-    }
-
     return response.data?.results?.slice(0, limit).map(toPolicy).map(toCardItem) || [];
   } catch (error) {
     console.error("fetchYouthPolicyCards error:", error);
@@ -260,7 +277,7 @@ export type RecommendedPolicyParams = {
 
 /**
  * ✅ 맞춤추천 정책 목록 (로그인 필수)
- * 
+ *
  * 백엔드: GET /api/policies/recommended/
  * - 사용자 프로필 기반 매칭 점수 계산
  * - 인증 토큰 필요 (axios interceptor에서 자동 주입)
@@ -281,7 +298,7 @@ export async function fetchRecommendedPolicies(
           category: params?.category,
           exclude: params?.exclude?.join(","),
           page: params?.page || 1,
-          page_size: params?.page_size || params?.limit || 12, // limit 호환성
+          page_size: params?.page_size || params?.limit || 12,
         },
       }
     );

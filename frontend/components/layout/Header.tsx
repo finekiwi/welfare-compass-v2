@@ -27,19 +27,22 @@ export function Header() {
 
       {/* ✅ 메인 헤더 */}
       <div className="border-b border-gray-200 mb-3 mx-auto flex h-16 max-w-[1280px] items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2 text-sm md:text-lg font-semibold">
+        <Link href="/" className="flex items-center gap-2">
           <Image
             src="/logo/welfarecompass.png"
             alt="복지나침반 로고"
-            width={32}
-            height={32}
-            className="h-8 w-8 object-contain"
+            width={36}
+            height={36}
+            className="h-9 w-9 object-contain"
             priority
           />
-          <span>복지나침반</span>
+          <div className="flex flex-col leading-tight">
+            <span className="text-base md:text-lg font-bold text-gray-900">복지나침반</span>
+            <span className="text-[10px] md:text-[11px] font-medium text-gray-400 tracking-wider">welfarecompass</span>
+          </div>
         </Link>
 
-        <nav className="flex items-center gap-1 md:gap-6 text-[13px] md:text-[15px] font-medium text-gray-700">
+        <nav className="flex items-center gap-1 md:gap-10 text-[13px] md:text-[15px] font-semibold text-gray-800">
           <Link href="/policy" className="hover:text-gray-900">
             복지찾기
           </Link>

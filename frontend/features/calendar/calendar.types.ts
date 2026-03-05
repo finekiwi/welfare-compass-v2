@@ -40,6 +40,7 @@ export interface DayOverflow {
 export interface CalendarEventDTO {
   plcy_no: string;
   plcy_nm: string;
+  category?: string;
   aplyYmd?: string;
   bizPrdBgngYmd?: string;
   bizPrdEndYmd?: string;

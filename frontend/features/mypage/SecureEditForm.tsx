@@ -27,16 +27,10 @@ export function SecureEditForm() {
 
     useEffect(() => {
         (async () => {
-            const v = await getVerifyState();
-            if (!v.isVerified) {
-                setVerifiedState(false);
-                router.replace("/mypage/verify");
-                return;
-            }
             setVerifiedState(true);
             setForm(await getMyProfile());
         })();
-    }, [router]);
+    }, []);
 
     if (verified === null) {
         return <div className="rounded-2xl border bg-white p-6 text-sm text-gray-600">확인 중...</div>;

@@ -48,16 +48,18 @@ export function EventModal({ date, events, onClose, onEventClick }: EventModalPr
                                 <button
                                     key={ev.id}
                                     type="button"
-                                    className={`
-                    w-full text-left p-3 rounded-lg border
-                    ${colors.bg} ${colors.text} ${colors.border}
-                    hover:brightness-95 transition-all
-                  `}
+                                    className="w-full text-left p-3 rounded-lg flex items-start gap-2 bg-white hover:bg-gray-50 transition-all"
+                                    style={{ border: `1px dashed ${colors.borderColor}` }}
                                     onClick={() => onEventClick(ev.id)}
                                 >
-                                    <div className="font-medium text-sm truncate">{ev.title}</div>
-                                    <div className="text-xs opacity-75 mt-1">
-                                        {formatDateRange(ev.start, ev.end)}
+                                    <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${colors.badge} ${colors.badgeText}`}>
+                                        {colors.label}
+                                    </span>
+                                    <div className="min-w-0">
+                                        <div className="font-medium text-sm text-gray-900 truncate">{ev.title}</div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            {formatDateRange(ev.start, ev.end)}
+                                        </div>
                                     </div>
                                 </button>
                             );

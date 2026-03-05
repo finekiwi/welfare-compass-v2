@@ -1,4 +1,3 @@
-// app/layout.tsx
 import "./globals.css";
 import type { Metadata } from "next";
 import { Header } from "@/components/layout/Header";
@@ -21,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // 이렇게 하면 어느 페이지에서도 챗봇 모달을 띄울 수 있어요.
     return (
         <html lang="ko">
-            <body>
+            <head>
+                <link rel="stylesheet" as="style" crossOrigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+            </head>
+            <body className="antialiased">
                 <Providers>
                     <Header />
                     <main className="min-h-[calc(100vh-160px)]">{children}</main>

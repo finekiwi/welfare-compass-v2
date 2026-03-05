@@ -163,8 +163,10 @@ export async function fetchScraps(): Promise<Scrap[]> {
             category: item.policy.categories?.[0]?.name || "기타",
             created_at: item.created_at,
         }));
-    } catch (error) {
-        console.error("fetchScraps error:", error);
+    } catch (error: any) {
+        if (error.response?.status !== 401) {
+            console.error("fetchScraps error:", error);
+        }
         return [];
     }
 }

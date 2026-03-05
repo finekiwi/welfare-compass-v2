@@ -23,7 +23,7 @@ export function OverflowButton({ col, count, onClick }: OverflowButtonProps) {
       "
             style={{
                 left,
-                top: "calc(4 * 22px + 32px)", // lane 4 위치 (overflow 위치)
+                top: "calc(4 * 23px + 32px)", // lane 4 위치 (overflow 위치)
             }}
             onClick={onClick}
         >

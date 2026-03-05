@@ -86,6 +86,13 @@ class Policy(models.Model):
     # 카테고리 (M:N, 변경 없음)
     categories = models.ManyToManyField(Category, related_name='policies')
 
+    # 정책 포스터 이미지 (관리자 업로드, 선택 사항)
+    poster = models.ImageField(
+        upload_to='policy_posters/',
+        blank=True, null=True,
+        help_text='정책 전용 포스터 이미지 (없으면 카테고리 기본 이미지 사용)'
+    )
+
     # 메타
     created_at = models.DateTimeField(null=True, blank=True)  # [RENAME] frst_reg_dt → created_at
     updated_at = models.DateTimeField(null=True, blank=True)  # [RENAME] last_mdfcn_dt → updated_at

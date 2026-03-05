@@ -1,56 +1,65 @@
 // features/calendar/constants/categoryColors.ts
 
-export const CATEGORY_COLORS: Record<string, { bg: string; text: string; hover: string; border: string }> = {
-    "주거": {
-        bg: "bg-blue-100",
-        text: "text-blue-700",
-        hover: "hover:bg-blue-200",
-        border: "border-blue-300"
-    },
-    "금융": {
-        bg: "bg-green-100",
-        text: "text-green-700",
-        hover: "hover:bg-green-200",
-        border: "border-green-300"
-    },
+export interface CategoryColorSet {
+    badge: string;       // 카테고리 뱃지 배경색
+    badgeText: string;   // 카테고리 뱃지 글자색
+    borderColor: string; // dashed border 색상 (CSS hex)
+    bgColor: string;     // 이벤트 배경 색상 (CSS rgba, 아주 연하고 반투명)
+    dot: string;         // 범례용 dot 색상
+    label: string;       // 카테고리 약어 (뱃지에 표시)
+}
+
+export const CATEGORY_COLORS: Record<string, CategoryColorSet> = {
     "일자리": {
-        bg: "bg-orange-100",
-        text: "text-orange-700",
-        hover: "hover:bg-orange-200",
-        border: "border-orange-300"
+        badge: "bg-orange-500",
+        badgeText: "text-white",
+        borderColor: "#f97316", // orange-500
+        bgColor: "#ffedd5cc",     // orange-100 (불투명한 연한 주황색)
+        dot: "bg-orange-400",
+        label: "일자리",
     },
-    "창업": {
-        bg: "bg-purple-100",
-        text: "text-purple-700",
-        hover: "hover:bg-purple-200",
-        border: "border-purple-300"
+    "주거": {
+        badge: "bg-blue-500",
+        badgeText: "text-white",
+        borderColor: "#3b82f6", // blue-500
+        bgColor: "#e7f0fccc",     // blue-100 (불투명한 연한 파란색)
+        dot: "bg-blue-400",
+        label: "주거",
     },
     "교육": {
-        bg: "bg-yellow-100",
-        text: "text-yellow-700",
-        hover: "hover:bg-yellow-200",
-        border: "border-yellow-300"
+        badge: "bg-yellow-500",
+        badgeText: "text-white",
+        borderColor: "#eab308", // yellow-500
+        bgColor: "#faf4c3cc",     // yellow-100 (불투명한 연한 노란색)
+        dot: "bg-yellow-400",
+        label: "교육",
     },
-    "복지": {
-        bg: "bg-pink-100",
-        text: "text-pink-700",
-        hover: "hover:bg-pink-200",
-        border: "border-pink-300"
+    "복지문화": {
+        badge: "bg-green-600",
+        badgeText: "text-white",
+        borderColor: "#16a34a", // green-600
+        bgColor: "#d5efdecc",     // green-100 (불투명한 연한 초록색)
+        dot: "bg-green-400",
+        label: "복지문화",
     },
-    "문화": {
-        bg: "bg-indigo-100",
-        text: "text-indigo-700",
-        hover: "hover:bg-indigo-200",
-        border: "border-indigo-300"
+    "참여권리": {
+        badge: "bg-purple-500",
+        badgeText: "text-white",
+        borderColor: "#a855f7", // purple-500
+        bgColor: "#f3e8ffcc",     // purple-100 (불투명한 연한 보라색)
+        dot: "bg-purple-400",
+        label: "참여권리",
     },
     "default": {
-        bg: "bg-gray-100",
-        text: "text-gray-700",
-        hover: "hover:bg-gray-200",
-        border: "border-gray-300"
+        badge: "bg-gray-500",
+        badgeText: "text-white",
+        borderColor: "#9ca3af", // gray-400
+        bgColor: "#f3f4f6cc",     // gray-100 (불투명한 연한 회색)
+        dot: "bg-gray-400",
+        label: "기타",
     },
 };
 
-export function getCategoryColor(category?: string) {
+export function getCategoryColor(category?: string): CategoryColorSet {
     return CATEGORY_COLORS[category ?? ""] || CATEGORY_COLORS["default"];
 }
