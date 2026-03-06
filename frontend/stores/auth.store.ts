@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
 import { api, apiRaw } from "@/services/axios";
+import { useProfileStore } from "./profile.store";
+import { useChatbotStore } from "./chatbot.store";
 
 interface AuthTokens {
     access: string;
@@ -52,6 +54,7 @@ export const useAuthStore = create<AuthState>()(
             // [보안] 보수적(Pessimistic) 업데이트: 쿠키가 정상 세팅되었는지 프로필 API로 재검증
             localStorage.removeItem("welfarecompass:mypage_profile");
             localStorage.removeItem("welfarecompass:verify_state");
+            useChatbotStore.getState().reset();
             // 프로필 검증 실패 시 throw하여 LoginForm의 catch 블록으로 전파
             await api.get("/api/accounts/profile/");
             set({ isAuthenticated: true });
@@ -75,6 +78,8 @@ export const useAuthStore = create<AuthState>()(
             localStorage.removeItem("welfarecompass:mypage_profile");
             localStorage.removeItem("welfarecompass:verify_state");
 
+            useProfileStore.getState().reset();
+            useChatbotStore.getState().reset();
             set({ isAuthenticated: false });
         },
 
@@ -82,6 +87,8 @@ export const useAuthStore = create<AuthState>()(
         clearAuth: () => {
             localStorage.removeItem("welfarecompass:mypage_profile");
             localStorage.removeItem("welfarecompass:verify_state");
+            useProfileStore.getState().reset();
+            useChatbotStore.getState().reset();
             set({ isAuthenticated: false });
         },
     }))
