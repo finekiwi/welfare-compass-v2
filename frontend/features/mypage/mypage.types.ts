@@ -123,6 +123,9 @@ export type MyProfile = {
     // 연락처 (본인인증 후 수정)
     phone: string;
     email: string;
+
+    // 패스워드 설정 여부 (소셜 로그인 등 판별)
+    hasPassword?: boolean;
 };
 
 // =========================================================================
@@ -130,6 +133,7 @@ export type MyProfile = {
 // =========================================================================
 export type VerifyState = {
     isVerified: boolean;
+    reauthToken?: string;
     verifiedAt?: string; // ISO
 };
 
@@ -144,4 +148,5 @@ export interface Scrap {
     district: string;
     category: string;
     created_at: string;
+    posterUrl?: string | null;
 }

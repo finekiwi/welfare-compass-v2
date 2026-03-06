@@ -144,6 +144,7 @@ function toCardItem(p: Policy): PolicyCardItem {
     content: p.content,
     applyStartDate: p.applyStartDate,
     applyEndDate: p.applyEndDate,
+    posterUrl: p.posterUrl,
   };
 }
 

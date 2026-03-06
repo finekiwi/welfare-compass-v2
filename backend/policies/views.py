@@ -7,9 +7,10 @@ from rest_framework.pagination import PageNumberPagination
 from django.core.paginator import Paginator, EmptyPage
 from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, timedelta
-from django.db.models import Q
+from django.db.models import Q, F, Case, When, Value, IntegerField
 from .models import Policy, Category, MapPOI
 from .serializers import PolicyListSerializer, PolicyDetailSerializer, CategorySerializer, MapPOISerializer
+from .constants import FRONTEND_CATEGORY_MAP
 # [BRAIN4-31] 회원용/챗봇용 분리
 from .services.matching import match_policies_for_web
 from .services.youth_api import get_youth_centers  # [BRAIN4-Map] 온통청년 API 서비스
@@ -49,7 +50,6 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         # [BRAIN4-36] 프론트엔드 카테고리 필터링
         category_key = params.get('category')
         if category_key:
-            from .constants import FRONTEND_CATEGORY_MAP
             if category_key in FRONTEND_CATEGORY_MAP:
                 queryset = queryset.filter(FRONTEND_CATEGORY_MAP[category_key])
 
@@ -119,7 +119,6 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
 
         # 신청상태 필터
         apply_status = params.get('apply_status')
-        from datetime import date, timedelta
         today = date.today()
         
         if apply_status:
@@ -152,7 +151,6 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         # 4. 정렬 (안정성을 위해 항상 policy_id를 마지막에 추가)
         # =====================================================================
         ordering = params.get('ordering')
-        from django.db.models import F, Case, When, Value, IntegerField
         
         if ordering == '-created_at':
             queryset = queryset.order_by('-created_at', '-policy_id')
@@ -191,7 +189,7 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
             apply_end_date__lte=week_later  # [RENAME] aply_end_dt → apply_end_date
         ).order_by('apply_end_date')[:6]  # [RENAME] aply_end_dt → apply_end_date
 
-        serializer = PolicyListSerializer(policies, many=True)
+        serializer = PolicyListSerializer(policies, many=True, context={'request': request})
         return Response(serializer.data)
 
     # =========================================================================
@@ -320,7 +318,7 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         policies_to_serialize = [p for p, score in current_page_items]
         scores = {p.policy_id: score for p, score in current_page_items}  # [RENAME] plcy_no → policy_id
 
-        serializer = PolicyListSerializer(policies_to_serialize, many=True)
+        serializer = PolicyListSerializer(policies_to_serialize, many=True, context={'request': request})
 
         # 각 정책에 점수 추가
         data = serializer.data

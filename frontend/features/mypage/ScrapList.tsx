@@ -6,6 +6,7 @@ import { fetchScraps } from "./mypage.api";
 import { Scrap } from "./mypage.types";
 import { PolicyCardItem } from "../policy/policy.types";
 import { PolicyCard } from "../policy/PolicyCard";
+import { CATEGORY_NAME_MAP } from "../policy/policy.constants";
 
 export function ScrapList() {
     const [scraps, setScraps] = useState<Scrap[]>([]);
@@ -26,15 +27,21 @@ export function ScrapList() {
     }, []);
 
     // Scrap 타입 -> PolicyCardItem 타입 변환
-    const toCardItem = (scrap: Scrap): PolicyCardItem => ({
-        id: scrap.plcy_no,
-        title: scrap.plcy_nm,
-        summary: scrap.plcy_expln_cn?.slice(0, 100) ?? "내용 없음",
-        region: scrap.district,
-        category: scrap.category as any, // 타입 호환성 주의 (string -> PolicyCategory)
-        isPriority: false,
-        content: "",
-    });
+    const toCardItem = (scrap: Scrap): PolicyCardItem => {
+        const mappedCategory = CATEGORY_NAME_MAP[scrap.category] || "welfare";
+
+        return {
+            id: scrap.plcy_no,
+            title: scrap.plcy_nm,
+            summary: scrap.plcy_expln_cn?.slice(0, 100) ?? "내용 없음",
+            region: scrap.district,
+            category: mappedCategory,
+            categories: [mappedCategory],
+            isPriority: false,
+            content: "",
+            posterUrl: scrap.posterUrl,
+        };
+    };
 
     if (loading) {
         return <div className="py-20 text-center text-gray-500">불러오는 중...</div>;

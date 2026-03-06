@@ -1,6 +1,15 @@
 from rest_framework import serializers
 from .models import Policy, Category
 
+class PosterUrlMixin:
+    """포스터 URL을 절대경로로 반환하는 믹스인"""
+    def get_poster_url(self, obj):
+        if obj.poster:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.poster.url)
+            return obj.poster.url
+        return None
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -16,7 +25,7 @@ class CategorySerializer(serializers.ModelSerializer):
 # =============================================================================
 
 
-class PolicyListSerializer(serializers.ModelSerializer):
+class PolicyListSerializer(PosterUrlMixin, serializers.ModelSerializer):
     """목록용 - 간략한 정보 (프론트 호환: 옛 필드명 유지)"""
     plcy_no = serializers.CharField(source='policy_id')  # [RENAME] model: policy_id → API: plcy_no
     plcy_nm = serializers.CharField(source='title')  # [RENAME] model: title → API: plcy_nm
@@ -41,16 +50,9 @@ class PolicyListSerializer(serializers.ModelSerializer):
             'poster_url',
         ]
 
-    def get_poster_url(self, obj):
-        if obj.poster:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.poster.url)
-            return obj.poster.url
-        return None
 
 
-class PolicyDetailSerializer(serializers.ModelSerializer):
+class PolicyDetailSerializer(PosterUrlMixin, serializers.ModelSerializer):
     """상세용 - 전체 정보 (프론트 호환: 옛 필드명 유지)"""
     plcy_no = serializers.CharField(source='policy_id')
     plcy_nm = serializers.CharField(source='title')
@@ -113,13 +115,6 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
             'poster_url',
         ]
 
-    def get_poster_url(self, obj):
-        if obj.poster:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.poster.url)
-            return obj.poster.url
-        return None
 
 
 # =============================================================================

@@ -33,6 +33,7 @@ interface BackendProfile {
     notification_email?: string | null;
     created_at: string;
     updated_at: string;
+    has_password?: boolean;
 }
 
 // =========================================================================
@@ -60,6 +61,7 @@ function toFrontendProfile(backend: BackendProfile): MyProfile {
         notificationEmail: backend.notification_email || null,
         phone: "",
         email: backend.email || "",
+        hasPassword: backend.has_password ?? true,
     };
 }
 
@@ -101,14 +103,15 @@ export async function getMyProfile(): Promise<MyProfile> {
     }
 }
 
-export async function saveMyProfile(profile: MyProfile): Promise<void> {
+export async function saveMyProfile(profile: MyProfile, token?: string): Promise<void> {
     const backendData = toBackendProfile(profile);
-    await api.put("/api/accounts/profile/", backendData);
+    const headers = token ? { "X-Reauth-Token": token } : {};
+    await api.put("/api/accounts/profile/", backendData, { headers });
 }
 
 export async function getVerifyState(): Promise<VerifyState> {
     await new Promise((r) => setTimeout(r, 30));
-    const raw = localStorage.getItem(VERIFY_KEY);
+    const raw = sessionStorage.getItem(VERIFY_KEY);
     if (!raw) return MOCK_VERIFY;
     try {
         return JSON.parse(raw) as VerifyState;
@@ -117,16 +120,16 @@ export async function getVerifyState(): Promise<VerifyState> {
     }
 }
 
-export async function setVerified(): Promise<void> {
+export async function setVerified(token?: string): Promise<void> {
     await new Promise((r) => setTimeout(r, 150));
-    const next: VerifyState = { isVerified: true, verifiedAt: new Date().toISOString() };
-    localStorage.setItem(VERIFY_KEY, JSON.stringify(next));
+    const next: VerifyState = { isVerified: true, reauthToken: token, verifiedAt: new Date().toISOString() };
+    sessionStorage.setItem(VERIFY_KEY, JSON.stringify(next));
 }
 
 
 export async function clearVerified(): Promise<void> {
     await new Promise((r) => setTimeout(r, 80));
-    localStorage.setItem(VERIFY_KEY, JSON.stringify({ isVerified: false }));
+    sessionStorage.setItem(VERIFY_KEY, JSON.stringify({ isVerified: false }));
 }
 
 // =========================================================================
@@ -143,6 +146,7 @@ export interface ScrapListResponse {
             plcy_expln_cn: string;
             district: string | null;
             categories: { id: number; name: string }[];
+            poster_url?: string | null;
         };
         created_at: string;
     }[];
@@ -162,6 +166,7 @@ export async function fetchScraps(): Promise<Scrap[]> {
             district: item.policy.district || "전국",
             category: item.policy.categories?.[0]?.name || "기타",
             created_at: item.created_at,
+            posterUrl: item.policy.poster_url ?? null,
         }));
     } catch (error: any) {
         if (error.response?.status !== 401) {

@@ -61,8 +61,8 @@ export function KakaoMap({
         let timerId: ReturnType<typeof setTimeout>;
         const bounds = new kakao.maps.LatLngBounds();
 
-        if (myLocation && filterCategory && filterCategory !== "전체") {
-            // 1) "내 위치"가 있고, 특정 카테고리를 선택한 경우 -> 내 위치 중심 반경 500m 정도가 보이도록 레벨 고정
+        if (myLocation && filterCategory) {
+            // 1) "내 위치"가 있고, 검색 필터가 활성화된 경우 -> 내 위치 중심 반경 500m 정도가 보이도록 레벨 고정
             // 카카오맵 레벨 5 (250m 축척)가 대략 화면상 반경 500m를 한눈에 보기 좋습니다.
             map.setCenter(new kakao.maps.LatLng(myLocation.lat, myLocation.lng));
 

@@ -1,16 +1,22 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponseRedirect # [추가] 리다이렉트를 위한 임포트
 from policies.models import Policy
-from .serializers import UserSerializer, ProfileSerializer, ScrapSerializer
+from .serializers import (
+    ProfileSerializer, ScrapSerializer
+)
 from .models import Profile, Scrap
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 import os # [추가] 환경변수 접근용
 from django.conf import settings
+import logging
+from .permissions import IsReauthenticated
+from django.core.signing import TimestampSigner
 
 # Google Login Imports
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
@@ -230,7 +236,7 @@ class CheckUsernameView(generics.GenericAPIView):
             )
         
         # 중복 체크
-        if User.objects.filter(username=username).exists():
+        if get_user_model().objects.filter(username=username).exists():
             return Response(
                 {"available": False, "message": "이미 사용 중인 아이디입니다."},
                 status=status.HTTP_200_OK
@@ -242,19 +248,40 @@ class CheckUsernameView(generics.GenericAPIView):
         )
 
 
-class ProfileView(generics.RetrieveUpdateAPIView):
+class ProfileView(APIView):
     """
     프로필 조회/수정 API
     GET  /api/accounts/profile/ - 내 프로필 조회
     PUT  /api/accounts/profile/ - 내 프로필 수정
+    PATCH /api/accounts/profile/ - 내 프로필 부분 수정
     """
     permission_classes = [IsAuthenticated]
-    serializer_class = ProfileSerializer
-    
-    def get_object(self):
-        # Profile이 없는 기존 유저의 경우 자동 생성
-        profile, created = Profile.objects.get_or_create(user=self.request.user)
-        return profile
+
+    def get(self, request):
+        serializer = ProfileSerializer(request.user.profile)
+        # 소셜 로그인 사용자인 경우 등을 위해 패스워드 설정 여부(has_usable_password)를 포함
+        has_password = request.user.has_usable_password()
+        data = serializer.data
+        data['has_password'] = has_password
+        return Response(data)
+
+    def put(self, request):
+        self.permission_classes = [IsAuthenticated, IsReauthenticated]
+        self.check_permissions(request)
+        serializer = ProfileSerializer(request.user.profile, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request):
+        self.permission_classes = [IsAuthenticated, IsReauthenticated]
+        self.check_permissions(request)
+        serializer = ProfileSerializer(request.user.profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class ScrapListView(generics.ListAPIView):
     """내 스크랩 목록"""
@@ -288,43 +315,100 @@ class ScrapDetailView(generics.GenericAPIView):
         return Response({"message": "스크랩되지 않은 정책입니다."}, status=status.HTTP_404_NOT_FOUND)
 
 
-class DeleteAccountView(generics.GenericAPIView):
+class DeleteAccountView(APIView):
     """
-    회원탈퇴 API
+    회원 탈퇴 API
     DELETE /api/accounts/delete/
-    
-    Request Body:
-        - password: 현재 비밀번호 (확인용)
+    """
+    permission_classes = [IsAuthenticated, IsReauthenticated]
+
+    def delete(self, request):
+        user = request.user
+        password = request.data.get('password')
+
+        # 비밀번호가 있는 사용자(일반 가입자)인 경우 입력된 비밀번호 검증
+        if user.has_usable_password():
+            if not password:
+                return Response(
+                    {"error": "비밀번호를 입력해주세요."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not user.check_password(password):
+                return Response(
+                    {"error": "비밀번호가 일치하지 않습니다."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # 비밀번호가 없는 사용자(소셜 로그인)는 VerifySocialView를 통해 발급받은
+        # reauth_token이 IsReauthenticated를 통해 검증된 상태임. 바로 탈퇴 진행.
+
+        user.delete()
+        return Response({"message": "회원탈퇴가 완료되었습니다."}, status=status.HTTP_200_OK)
+
+
+class VerifyPasswordView(APIView):
+    """
+    마이페이지 정보 수정/탈퇴 전 비밀번호 검증 및 재인증 토큰 발급
+    POST /api/accounts/verify-password/
     """
     permission_classes = [IsAuthenticated]
-    
-    def delete(self, request):
-        password = request.data.get('password')
+
+    def post(self, request):
+        user = request.user
         
+        if not user.has_usable_password():
+            return Response(
+                {"error": "비밀번호가 없는 계정입니다. 소셜 로그인 재인증을 진행하세요."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        password = request.data.get('password')
         if not password:
             return Response(
                 {"error": "비밀번호를 입력해주세요."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
-        user = request.user
-        
-        # 비밀번호 확인
+            
         if not user.check_password(password):
             return Response(
                 {"error": "비밀번호가 일치하지 않습니다."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+        signer = TimestampSigner()
+        token = signer.sign(str(user.id))
         
-        # 사용자 삭제 (CASCADE로 Profile, Scrap 등 자동 삭제)
-        username = user.username
-        user.delete()
-        
-        return Response(
-            {"message": f"'{username}' 계정이 삭제되었습니다. 이용해주셔서 감사합니다."},
-            status=status.HTTP_200_OK
-        )
+        return Response({
+            "message": "인증에 성공했습니다.",
+            "reauth_token": token
+        }, status=status.HTTP_200_OK)
 
+
+class VerifySocialView(APIView):
+    """
+    소셜 로그인 사용자용 재인증 토큰 발급 API
+    POST /api/accounts/verify-social/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        
+        if user.has_usable_password():
+            return Response(
+                {"error": "비밀번호가 있는 계정입니다. 일반 재인증을 진행하세요."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # 소셜 로그인 사용자는 비밀번호 검증 없이 토큰 발급
+        signer = TimestampSigner()
+        token = signer.sign(str(user.id))
+        
+        return Response({
+            "message": "소셜 계정 인증에 성공했습니다.",
+            "reauth_token": token
+        }, status=status.HTTP_200_OK)
+        
 
 # class CustomLoginView(TokenObtainPairView):
 #     """
@@ -477,7 +561,7 @@ class CustomPasswordResetView(PasswordResetView):
         email = request.data.get('email')
         
         # [보안] User Enumeration 방지: 이메일 존재 여부와 무관하게 동일한 200 응답 반환
-        if not User.objects.filter(email=email).exists():
+        if not get_user_model().objects.filter(email=email).exists():
             logger.info("비밀번호 재설정 요청 - 미가입 이메일")
             return Response(
                 {"detail": "입력하신 이메일이 가입된 계정이라면, 비밀번호 재설정 링크를 발송했습니다."},
@@ -486,8 +570,6 @@ class CustomPasswordResetView(PasswordResetView):
             
         return super().post(request, *args, **kwargs)
 
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -513,7 +595,7 @@ class FindUsernameView(APIView):
         # 실제 발송은 가입자에게만 처리
         UNIFIED_MESSAGE = "입력하신 이메일이 가입된 계정이라면, 아이디 정보를 발송했습니다."
 
-        users = User.objects.filter(email=email)
+        users = get_user_model().objects.filter(email=email)
         
         if not users.exists():
             logger.info(f"아이디 찾기 요청 - 미가입 이메일")

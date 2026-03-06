@@ -12,6 +12,7 @@ import { api } from "@/services/axios";
 export function SecureEditForm() {
     const router = useRouter();
     const [verified, setVerifiedState] = useState<boolean | null>(null);
+    const [reauthToken, setReauthToken] = useState<string | undefined>(undefined);
     const [form, setForm] = useState<MyProfile | null>(null);
 
     // 비밀번호는 목업이라 실제 저장 X (UI만)
@@ -27,10 +28,16 @@ export function SecureEditForm() {
 
     useEffect(() => {
         (async () => {
+            const state = await getVerifyState();
+            if (!state.isVerified) {
+                router.replace("/mypage/verify");
+                return;
+            }
             setVerifiedState(true);
+            setReauthToken(state.reauthToken);
             setForm(await getMyProfile());
         })();
-    }, []);
+    }, [router]);
 
     if (verified === null) {
         return <div className="rounded-2xl border bg-white p-6 text-sm text-gray-600">확인 중...</div>;
@@ -41,7 +48,7 @@ export function SecureEditForm() {
 
     async function onSave() {
         if (!form) return; // ✅ null이면 저장하지 않음(가드)
-        await saveMyProfile(form);
+        await saveMyProfile(form, reauthToken);
         // 인증은 보통 "일회성"으로 처리하는 경우가 많아서 저장 후 해제
         await clearVerified();
         router.push("/mypage");
@@ -58,7 +65,8 @@ export function SecureEditForm() {
 
         try {
             await api.delete("/api/accounts/delete/", {
-                data: { password: deletePw }
+                data: { password: deletePw },
+                headers: reauthToken ? { "X-Reauth-Token": reauthToken } : {}
             });
 
             // 삭제 성공 → 토큰 삭제 및 메인으로 이동
