@@ -8,6 +8,7 @@ dependencies = [
     "chromadb>=1.4.0",
     "cohere>=5.20.1",
     "cryptography>=41.0.0",
+    "dj-database-url>=2.1.0",
     "dj-rest-auth>=5.0.0",
     "django>=5.2.9,<6.0",
     "django-allauth>=0.61.1",
