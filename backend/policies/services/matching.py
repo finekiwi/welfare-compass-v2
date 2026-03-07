@@ -490,16 +490,61 @@ def _check_special_conditions(policy, user_info):
     return True
 
 
+def get_rejection_reasons(policy, user_info: dict) -> list[str]:
+    """
+    정책이 사용자와 매칭되지 않는 사유를 반환.
+
+    [BRAIN4-47] 신규 함수 (2/24 회의 결정: FN_013 탈락사유 반환)
+    - 매칭되면 빈 리스트 반환
+    - 탈락 시 모든 탈락 사유를 수집하여 반환 (early return 하지 않음)
+
+    Args:
+        policy: Policy 모델 인스턴스
+        user_info: Profile.to_matching_dict() 결과
+
+    Returns:
+        list[str]: 탈락 사유 리스트 (빈 리스트면 매칭)
+    """
+    user_info = normalize_user_info(user_info)
+    reasons = []
+
+    # 1. 나이
+    user_age = user_info.get('age')
+    if user_age is not None:
+        if policy.age_min and user_age < policy.age_min:
+            reasons.append(f'나이 미달 (만 {user_age}세, 최소 {policy.age_min}세)')
+        if policy.age_max and user_age > policy.age_max:
+            reasons.append(f'나이 초과 (만 {user_age}세, 최대 {policy.age_max}세)')
+
+    # 2. 지역
+    user_residence = user_info.get('residence', '')
+    if policy.district and user_residence:
+        if policy.district != user_residence:
+            reasons.append(f'거주지 불일치 ({user_residence} → {policy.district} 전용)')
+
+    # 3. 취업/학력/결혼/소득
+    if not _matches_job_requirement(policy, user_info):
+        reasons.append('취업상태 불일치')
+    if not _matches_education_requirement(policy, user_info):
+        reasons.append('학력 불일치')
+    if not _matches_marriage_requirement(policy, user_info):
+        reasons.append('결혼상태 불일치')
+    if not _matches_income_requirement(policy, user_info):
+        reasons.append('소득 초과')
+
+    # 4. 특수조건
+    if not _check_special_conditions(policy, user_info):
+        reasons.append('특수조건 미해당')
+
+    return reasons
+
+
 def is_policy_matching_user(policy, user_info: dict) -> bool:
     """
     정책이 사용자 정보와 매칭되는지 확인 (공통 함수)
 
     notifications/services.py 등 다른 모듈에서 import하여 사용
     매칭 기준 변경 시 이 함수만 수정하면 됨 (DRY 원칙)
-
-    [BRAIN4-31] 변경사항:
-    - 취업 요건(jobCd), 학력 요건(schoolCd), 결혼 상태(mrgSttsCd) 체크 추가
-    - _apply_base_filters()와 동일한 로직 적용
 
     Args:
         policy: Policy 모델 인스턴스
@@ -508,32 +553,7 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     Returns:
         bool: 매칭 여부
     """
-    # [BRAIN4-34] 특수조건 alias 정규화
-    user_info = normalize_user_info(user_info)
-
-    # 1. 나이 체크
-    user_age = user_info.get('age')
-    if user_age is not None:
-        if policy.age_min and user_age < policy.age_min:
-            return False
-        if policy.age_max and user_age > policy.age_max:
-            return False
-
-    # 2. 지역 체크 (정책에 지역 제한이 있는 경우)
-    user_residence = user_info.get('residence', '')
-    if policy.district and user_residence:
-        if policy.district != user_residence:
-            return False
-
-    # 3. 코드 필터 체크 (취업/학력/결혼)
-    if not _passes_profile_code_filters(policy, user_info):
-        return False
-
-    # 4. 특수조건 체크 (한부모, 장애인, 수급자, 신혼, 중소기업, 군인 등)
-    if not _check_special_conditions(policy, user_info):
-        return False
-
-    return True
+    return not get_rejection_reasons(policy, user_info)
 
 
 def _get_relevant_categories(user_info):
