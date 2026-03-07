@@ -38,7 +38,7 @@ from typing import Literal, FrozenSet, Dict, Optional
 # ============================================================================
 # 타입 정의
 # ============================================================================
-RerankerType = Literal["none", "ko-reranker", "bge-reranker-v2-m3"]
+RerankerType = Literal["none", "cohere", "ko-reranker", "bge-reranker-v2-m3"]
 
 
 # ============================================================================
@@ -214,13 +214,13 @@ class RerankerConfig:
     # 허용된 리랭커 타입
     VALID_TYPES: FrozenSet[str] = frozenset([
         "none",
-        # "cohere",  # DEPRECATED - 실험 종료 (BGE로 최종 결정)
+        "cohere",
         "ko-reranker",
-        "bge-reranker-v2-m3"
+        "bge-reranker-v2-m3",
     ])
 
-    # 기본값 (BGE로 변경)
-    DEFAULT_TYPE: RerankerType = "bge-reranker-v2-m3"
+    # 기본값: RERANKER_TYPE 환경변수로 재정의 가능 (기본값: cohere)
+    DEFAULT_TYPE: RerankerType = os.getenv("RERANKER_TYPE", "cohere")
     DEFAULT_TOP_K: int = 10
     DEFAULT_MAX_LENGTH: int = 1024
     WARMUP_RUNS: int = 3

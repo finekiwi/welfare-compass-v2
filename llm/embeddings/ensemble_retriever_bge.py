@@ -39,8 +39,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from embeddings.vector_store import load_vector_db, is_policy_active
 from embeddings.bm25_retriever import get_bm25_retriever
-from embeddings.config import RetrieverConfig
-from embeddings.rerankers.local_reranker import LocalReranker
+from embeddings.config import RerankerConfig, RetrieverConfig
+from embeddings.rerankers import get_reranker
 
 
 # ============================================================================
@@ -134,39 +134,38 @@ def filter_expired(documents: List[Document], include_expired: bool = False) -> 
 
 
 # ============================================================================
-# BGE 리랭커
+# 리랭커 (config 기반 팩토리)
 # ============================================================================
-_bge_reranker_cache = None
+_reranker_cache = None
 
 
-def get_bge_reranker(max_length: int = None) -> LocalReranker:
-    """BGE 리랭커 인스턴스 반환 (캐싱)
-
-    Args:
-        max_length: 최대 토큰 길이 (None이면 기본값 8192 사용)
-
-    Returns:
-        LocalReranker 인스턴스 (BGE)
-    """
-    global _bge_reranker_cache
-    if _bge_reranker_cache is None:
-        _bge_reranker_cache = LocalReranker(BGE_MODEL_TYPE, max_length)
-    return _bge_reranker_cache
+def _get_reranker():
+    """RerankerConfig.DEFAULT_TYPE 기반 리랭커 인스턴스 반환 (캐싱)"""
+    global _reranker_cache
+    if _reranker_cache is None:
+        _reranker_cache = get_reranker(RerankerConfig.DEFAULT_TYPE)
+    return _reranker_cache
 
 
-def rerank_with_bge(
+def _get_reranker_type_name() -> str:
+    """현재 설정된 리랭커 타입명 반환"""
+    reranker = _get_reranker()
+    if reranker is None:
+        return "none"
+    return reranker.name
+
+
+def rerank_documents_with_config(
     query: str,
     documents: List[Document],
     top_k: int = DEFAULT_TOP_K,
-    max_length: int = None
 ) -> tuple:
-    """BGE 리랭커로 문서 재정렬
+    """설정된 리랭커로 문서 재정렬
 
     Args:
         query: 검색 쿼리
         documents: 재정렬할 문서 리스트
         top_k: 반환할 상위 k개
-        max_length: 최대 토큰 길이
 
     Returns:
         (reranked_documents, latency_ms) 튜플
@@ -174,28 +173,12 @@ def rerank_with_bge(
     if not documents:
         return [], 0.0
 
-    reranker = get_bge_reranker(max_length)
+    reranker = _get_reranker()
+    if reranker is None:
+        return documents[:top_k], 0.0
+
     result = reranker.rerank(query, documents, top_k)
-
     return result.documents, result.latency_ms
-
-
-def warmup_bge_reranker(runs: int = 3):
-    """BGE 리랭커 워밍업
-
-    모델을 미리 로드하고 초기 추론을 수행하여 이후 검색 속도를 향상시킵니다.
-
-    Args:
-        runs: 워밍업 반복 횟수 (기본값: 3)
-    """
-    print(f"🔥 BGE 리랭커 워밍업 중... ({runs}회)")
-    dummy = [Document(page_content="워밍업 테스트", metadata={"plcyNm": "테스트"})]
-
-    for i in range(runs):
-        rerank_with_bge("워밍업 쿼리", dummy, top_k=1)
-        print(f"  {i+1}/{runs} 완료")
-
-    print("✅ 워밍업 완료")
 
 
 # ============================================================================
@@ -272,30 +255,30 @@ def ensemble_search_with_bge(
     if verbose:
         print(f"📦 리랭킹 대상: {len(candidates)}개")
 
-    # 5. BGE 리랭킹
+    # 5. 리랭킹 (config 기반)
     if not candidates:
         final_docs = []
         rerank_latency = 0.0
     else:
-        final_docs, rerank_latency = rerank_with_bge(
+        final_docs, rerank_latency = rerank_documents_with_config(
             query,
             candidates,
             top_k=top_k,
-            max_length=max_length
         )
 
     total_latency = (time.perf_counter() - start_time) * 1000
+    active_reranker = _get_reranker_type_name()
 
     if verbose:
-        print(f"🎯 BGE 리랭킹 완료: {len(final_docs)}개")
-        print(f"⏱️  총 시간: {total_latency:.0f}ms (리랭킹: {rerank_latency:.0f}ms)")
+        print(f"리랭킹 완료 ({active_reranker}): {len(final_docs)}개")
+        print(f"총 시간: {total_latency:.0f}ms (리랭킹: {rerank_latency:.0f}ms)")
 
     # 결과 반환
     if return_metadata:
         return SearchResult(
             documents=final_docs,
             latency_ms=total_latency,
-            reranker_type=BGE_MODEL_TYPE,
+            reranker_type=active_reranker,
             retrieve_k=retrieve_k,
             final_count=len(final_docs)
         )
@@ -359,10 +342,12 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", action="store_true", help="워밍업 수행")
     args = parser.parse_args()
 
-    # 워밍업
+    # 워밍업 (로컬 리랭커인 경우만 의미 있음)
     if args.warmup:
-        warmup_bge_reranker()
-        print()
+        reranker = _get_reranker()
+        if reranker and hasattr(reranker, 'warmup'):
+            reranker.warmup()
+            print()
 
     # 테스트 실행
     test_bge_search(args.query, args.top_k)

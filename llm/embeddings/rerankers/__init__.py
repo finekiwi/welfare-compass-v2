@@ -22,9 +22,9 @@ def get_reranker(
     
     if reranker_type == "none":
         return None
-    # elif reranker_type == "cohere":  # DEPRECATED - Cohere 실험 종료
-    #     from embeddings.rerankers.cohere_reranker import CohereReranker
-    #     return CohereReranker()
+    elif reranker_type == "cohere":
+        from embeddings.rerankers.cohere_reranker import CohereReranker
+        return CohereReranker()
     else:
         from embeddings.rerankers.local_reranker import LocalReranker
         return LocalReranker(reranker_type, max_length)
@@ -45,13 +45,10 @@ def rerank_documents(
     return reranker.rerank(query, documents, top_k)
 
 
-# 하위 호환
 from embeddings.rerankers.local_reranker import warmup_reranker
-# from embeddings.rerankers.cohere_reranker import rerank_with_cohere, get_cohere_client  # DEPRECATED
 
 __all__ = [
     "BaseReranker", "RerankResult",
     "get_reranker", "rerank_documents",
     "warmup_reranker",
-    # "rerank_with_cohere", "get_cohere_client",  # DEPRECATED
 ]
