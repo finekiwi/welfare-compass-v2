@@ -73,6 +73,9 @@ JOB_STATUS_TO_KOREAN = {
     'freelancer': '프리랜서',
 }
 
+EMP_SEEKING_OR_UNEMPLOYED = frozenset({'구직중', '무직'})
+EMP_STATUS_STARTUP_PREP = '창업준비'
+
 # 역방향: 한글 → 코드 (챗봇 extract_info → matching 연동용)
 JOB_KOREAN_TO_CODE: dict[str, str] = {
     v: JOB_STATUS_TO_CODE[k] for k, v in JOB_STATUS_TO_KOREAN.items()
@@ -176,6 +179,10 @@ INCOME_CODE_LABELS = {
     '0043003': '기타',
 }
 
+# 연소득 임계값 (만원). 미만이면 '복지문화/취약계층' 카테고리 추가.
+# 단위 근거: accounts/models.py:98 income_amount = IntegerField(verbose_name='연소득(만원)')
+LOW_INCOME_THRESHOLD = 3600
+
 
 # =============================================================================
 # sbizCd 코드 상수 (특수조건)
@@ -262,6 +269,13 @@ def normalize_user_info(user_info: dict) -> dict:
             mapped_mrg = MARRIAGE_KOREAN_TO_CODE.get(str(mrg_status).strip())
             if mapped_mrg:
                 normalized['marriage_code'] = mapped_mrg
+
+    # 주거형태 영→한 정규화
+    # Profile enum이 그대로 들어오는 직접 dict 입력 경로 방어
+    raw_housing_value = normalized.get('housing_type', '')
+    raw_housing = '' if raw_housing_value is None else str(raw_housing_value).strip()
+    if raw_housing:
+        normalized['housing_type'] = HOUSING_TYPE_TO_KOREAN.get(raw_housing, raw_housing)
 
     raw_conditions = normalized.get('special_conditions', [])
     if raw_conditions:

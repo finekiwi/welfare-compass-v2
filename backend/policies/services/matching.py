@@ -28,6 +28,9 @@ from policies.services.matching_keys import (
     INCOME_CODE_ANY,
     INCOME_CODE_ANNUAL,
     INCOME_CODE_OTHER,
+    EMP_SEEKING_OR_UNEMPLOYED,
+    EMP_STATUS_STARTUP_PREP,
+    LOW_INCOME_THRESHOLD,
     parse_code_string,
     normalize_user_info,
 )
@@ -259,63 +262,60 @@ def _log_unknown_codes(policy, field_name: str, unknown_codes: set[str]) -> None
     )
 
 
-def _matches_job_requirement(policy, user_info: dict) -> bool:
-    """취업 요건 매칭 (unknown-only fail-open, mixed는 known 우선)"""
-    job_code = user_info.get('job_code', '')
-    policy_job = policy.employment_status or ''
-    if not job_code or not policy_job:
+def _matches_code_requirement(
+    policy_field_value: str,
+    user_code: str,
+    restriction_code: str,
+    known_code_set: set,
+    field_name: str,
+    policy=None,
+    also_match: dict | None = None,
+) -> bool:
+    """코드 기반 요건 매칭 공통 로직 (취업/학력 공용)"""
+    if not user_code or not policy_field_value:
         return True
-
-    policy_codes = parse_code_string(policy_job)
+    policy_codes = parse_code_string(policy_field_value)
     if not policy_codes:
         return True
-
-    if RESTRICTION_CODE_JOB in policy_codes:
+    if restriction_code in policy_codes:
         return True
-
-    known_codes = (policy_codes & KNOWN_JOB_CODES) - {RESTRICTION_CODE_JOB}
-    unknown_codes = policy_codes - KNOWN_JOB_CODES
-    _log_unknown_codes(policy, 'employment_status', unknown_codes)
-
-    # unknown-only면 탈락시키지 않음
-    if not known_codes and unknown_codes:
+    known = (policy_codes & known_code_set) - {restriction_code}
+    unknown = policy_codes - known_code_set
+    if policy is not None:
+        _log_unknown_codes(policy, field_name, unknown)
+    if not known and unknown:
         return True
-
-    # known+unknown 혼재면 known만 기준으로 평가
-    if known_codes:
-        return job_code in known_codes
-
+    if known:
+        if also_match:
+            allowed = {user_code, *also_match.get(user_code, [])}
+            return bool(allowed & known)
+        return user_code in known
     return True
+
+
+def _matches_job_requirement(policy, user_info: dict) -> bool:
+    """취업 요건 매칭"""
+    return _matches_code_requirement(
+        policy_field_value=policy.employment_status or '',
+        user_code=user_info.get('job_code', ''),
+        restriction_code=RESTRICTION_CODE_JOB,
+        known_code_set=KNOWN_JOB_CODES,
+        field_name='employment_status',
+        policy=policy,
+    )
 
 
 def _matches_education_requirement(policy, user_info: dict) -> bool:
-    """학력 요건 매칭 (unknown-only fail-open, mixed는 known 우선)"""
-    education_code = user_info.get('education_code', '')
-    policy_edu = policy.education_status or ''
-    if not education_code or not policy_edu:
-        return True
-
-    policy_codes = parse_code_string(policy_edu)
-    if not policy_codes:
-        return True
-
-    if RESTRICTION_CODE_EDUCATION in policy_codes:
-        return True
-
-    known_codes = (policy_codes & KNOWN_EDUCATION_CODES) - {RESTRICTION_CODE_EDUCATION}
-    unknown_codes = policy_codes - KNOWN_EDUCATION_CODES
-    _log_unknown_codes(policy, 'education_status', unknown_codes)
-
-    # unknown-only면 탈락시키지 않음
-    if not known_codes and unknown_codes:
-        return True
-
-    # known+unknown 혼재면 known만 기준으로 평가
-    if known_codes:
-        allowed_codes = {education_code, *EDUCATION_ALSO_MATCH.get(education_code, [])}
-        return bool(allowed_codes & known_codes)
-
-    return True
+    """학력 요건 매칭"""
+    return _matches_code_requirement(
+        policy_field_value=policy.education_status or '',
+        user_code=user_info.get('education_code', ''),
+        restriction_code=RESTRICTION_CODE_EDUCATION,
+        known_code_set=KNOWN_EDUCATION_CODES,
+        field_name='education_status',
+        policy=policy,
+        also_match=EDUCATION_ALSO_MATCH,
+    )
 
 
 def _matches_marriage_requirement(policy, user_info: dict) -> bool:
@@ -470,13 +470,13 @@ def _check_special_conditions(policy, user_info):
             return False
 
     # 중소기업/군인 전용 정책 (sbiz_cd 코드)
-    policy_sbiz = policy.sbiz_cd or ''
+    sbiz_codes = parse_code_string(policy.sbiz_cd)
 
-    if SBIZ_CODE_SME in policy_sbiz:
+    if SBIZ_CODE_SME in sbiz_codes:
         if '중소기업' not in user_special:
             return False
 
-    if SBIZ_CODE_MILITARY in policy_sbiz:
+    if SBIZ_CODE_MILITARY in sbiz_codes:
         if '군인' not in user_special:
             return False
 
@@ -522,8 +522,7 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
     # 2. 지역 체크 (정책에 지역 제한이 있는 경우)
     user_residence = user_info.get('residence', '')
     if policy.district and user_residence:
-        # 정책 지역과 사용자 지역이 일치하지 않으면 제외
-        if policy.district not in user_residence and user_residence not in policy.district:
+        if policy.district != user_residence:
             return False
 
     # 3. 코드 필터 체크 (취업/학력/결혼)
@@ -538,86 +537,71 @@ def is_policy_matching_user(policy, user_info: dict) -> bool:
 
 
 def _get_relevant_categories(user_info):
-    """
-    사용자 맥락에서 관련 카테고리 도출
-
-    [회의 결정사항 2026.01.19 반영]
-    - 기존: 대분류(Categories M:N)만 사용
-    - 변경: 중분류(subcategory) 키워드를 함께 반환하여 정밀 매칭 유도
-    """
+    """사용자 맥락에서 관련 카테고리 도출 (중복 없이 순서 보존)"""
     relevant = []
+    _seen = set()
 
-    # 주거 맥락 → 중분류 키워드
+    def _add(cat):
+        if cat not in _seen:
+            _seen.add(cat)
+            relevant.append(cat)
+
+    # 주거 맥락
     housing = user_info.get('housing_type', '')
     if housing:
-        relevant.append('주거')  # 대분류
-
-        # ---------------------------------------------------------------------
-        # [2026.01.20] 중분류 키워드 수정 내역 (API 실제 값 반영)
-        # ---------------------------------------------------------------------
-        relevant.append('전월세 및 주거급여 지원')
-        relevant.append('주택 및 거주지')
-
+        _add('주거')
+        _add('전월세 및 주거급여 지원')
+        _add('주택 및 거주지')
         if housing == '전세':
-            relevant.append('전세')
+            _add('전세')
         elif housing == '월세':
-            relevant.append('월세')
+            _add('월세')
 
     # 취업 맥락
     emp = user_info.get('employment_status', '')
-    if emp in ['구직중', '무직']:
-        relevant.append('일자리')  # 대분류
+    if emp in EMP_SEEKING_OR_UNEMPLOYED:
+        _add('일자리')
+        _add('취업')
+        _add('창업')
+        _add('재직자')
+    elif emp == EMP_STATUS_STARTUP_PREP:
+        _add('창업')
 
-        # ---------------------------------------------------------------------
-        # [2026.01.20] 중분류 키워드 수정 내역
-        # ---------------------------------------------------------------------
-        relevant.append('취업')
-        relevant.append('창업')
-        relevant.append('재직자')
-
-    elif emp == '창업준비':
-        relevant.append('창업')
-
-    # 소득 맥락 (생활지원)
+    # 소득 맥락
     income = user_info.get('income')
-    if income is not None and income < 3600:
-        # ---------------------------------------------------------------------
-        # [2026.01.20] 대분류 변경 (생활 -> 복지문화)
-        # ---------------------------------------------------------------------
-        relevant.append('복지문화')  # 대분류
-        relevant.append('취약계층 및 금융지원')
+    if income is not None and income < LOW_INCOME_THRESHOLD:
+        _add('복지문화')
+        _add('취약계층 및 금융지원')
 
     # 특수조건 맥락
     special = user_info.get('special_conditions', [])
     if any(s in ['한부모', '장애'] for s in special):
-        relevant.append('취약계층 및 금융지원')
-        relevant.append('건강')  # 신규 추가
+        _add('취약계층 및 금융지원')
+        _add('건강')
 
     # 자녀/학생 맥락
     if user_info.get('has_children') or user_info.get('children_ages'):
-        relevant.append('교육')  # 대분류
-
-        # ---------------------------------------------------------------------
-        # [2026.01.20] 중분류 키워드 수정 내역
-        # ---------------------------------------------------------------------
-        relevant.append('교육비지원')
+        _add('교육')
+        _add('교육비지원')
 
     # 문화/예술 관심
     if '예술' in user_info.get('interests', []):
-        relevant.append('복지문화')
-        relevant.append('문화활동')
-        relevant.append('예술인지원')
+        _add('복지문화')
+        _add('문화활동')
+        _add('예술인지원')
 
-    # 사용자가 직접 선택한 필요분야
-    needs = user_info.get('needs', [])
-    for need in needs:
-        if need not in relevant:
-            relevant.append(need)
+    # 사용자 필요분야
+    for need in user_info.get('needs', []):
+        _add(need)
 
-    # 기본: 청년이면 일자리/주거 + 기본 중분류
+    # 기본: 청년이면 기본 카테고리
     age = user_info.get('age')
     if not relevant and age and 19 <= age <= 39:
-        relevant = ['주거', '일자리', '복지문화', '취업', '전월세 및 주거급여 지원']
+        _add('주거')
+        _add('일자리')
+        _add('복지문화')
+        _add('취업')
+        _add('전월세 및 주거급여 지원')
 
     return relevant
 
@@ -728,7 +712,7 @@ def _calc_priority(policy, user_info, relevant_categories):
                 score -= 30
 
     # 7. 고용상태 세부 매칭
-    if emp_status in ['구직중', '무직']:
+    if emp_status in EMP_SEEKING_OR_UNEMPLOYED:
         if any(kw in policy_name for kw in ['취업', '일자리', '자립']):
             score += 20
         if any(kw in policy_name for kw in ['청년통장', '저축']):

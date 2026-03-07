@@ -8,6 +8,8 @@ from policies.services.matching import (
     match_policies_for_chatbot,
     _select_diverse_categories,
     _passes_profile_code_filters,
+    _check_special_conditions,
+    is_policy_matching_user,
 )
 from policies.services.matching_keys import (
     MATCHING_DICT_KEYS,
@@ -525,3 +527,197 @@ class TestMedianIncomeConsistency(SimpleTestCase):
                 extract_table[size],
                 f"Mismatch for household size {size}",
             )
+
+
+# =============================================================================
+# [BRAIN4-47] sbiz_cd exact match 테스트
+# =============================================================================
+
+class TestSbizCodeExactMatch(SimpleTestCase):
+    """sbiz_cd가 set 분해되어 substring 오탐이 없음을 보장"""
+
+    class DummyPolicy:
+        def __init__(self, sbiz_cd='', is_for_single_parent=False,
+                     is_for_disabled=False, is_for_low_income=False,
+                     is_for_newlywed=False, description='', support_content=''):
+            self.sbiz_cd = sbiz_cd
+            self.is_for_single_parent = is_for_single_parent
+            self.is_for_disabled = is_for_disabled
+            self.is_for_low_income = is_for_low_income
+            self.is_for_newlywed = is_for_newlywed
+            self.description = description
+            self.support_content = support_content
+
+    def test_sme_code_exact_match(self):
+        """중소기업 코드 정확 매칭"""
+        policy = self.DummyPolicy(sbiz_cd='0014001')
+        self.assertFalse(_check_special_conditions(policy, {}))
+        self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['중소기업']}))
+
+    def test_military_code_exact_match(self):
+        """군인 코드 정확 매칭"""
+        policy = self.DummyPolicy(sbiz_cd='0014007')
+        self.assertFalse(_check_special_conditions(policy, {}))
+        self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['군인']}))
+
+    def test_no_substring_false_positive(self):
+        """0014001이 0014 포함이지만 0014만으로는 매칭 안 됨 (substring 오탐 방지)"""
+        policy = self.DummyPolicy(sbiz_cd='0014010')
+        # 0014010은 SME(0014001)도 군인(0014007)도 아님 → 통과해야 함
+        self.assertTrue(_check_special_conditions(policy, {}))
+
+    def test_multiple_sbiz_codes(self):
+        """쉼표 구분 복수 코드에서 정확 매칭"""
+        policy = self.DummyPolicy(sbiz_cd='0014001,0014007')
+        self.assertFalse(_check_special_conditions(policy, {}))
+        self.assertFalse(_check_special_conditions(policy, {'special_conditions': ['중소기업']}))
+        self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['중소기업', '군인']}))
+
+    def test_empty_sbiz_cd_passes(self):
+        """sbiz_cd 없으면 통과"""
+        policy = self.DummyPolicy(sbiz_cd='')
+        self.assertTrue(_check_special_conditions(policy, {}))
+
+
+# =============================================================================
+# [BRAIN4-47] 지역 exact match 테스트
+# =============================================================================
+
+class TestDistrictExactMatch(SimpleTestCase):
+    """is_policy_matching_user()에서 지역 비교가 exact match로 동작"""
+
+    class DummyPolicy:
+        def __init__(self, district='', age_min=None, age_max=None):
+            self.district = district
+            self.age_min = age_min
+            self.age_max = age_max
+            self.employment_status = ''
+            self.education_status = ''
+            self.marriage_status = ''
+            self.income_level = ''
+            self.income_max = None
+            self.sbiz_cd = ''
+            self.is_for_single_parent = False
+            self.is_for_disabled = False
+            self.is_for_low_income = False
+            self.is_for_newlywed = False
+            self.description = ''
+            self.support_content = ''
+
+    def test_exact_match_passes(self):
+        """'강남구' == '강남구' → 통과"""
+        policy = self.DummyPolicy(district='강남구')
+        self.assertTrue(is_policy_matching_user(policy, {'residence': '강남구'}))
+
+    def test_exact_match_fails(self):
+        """'강남구' != '마포구' → 탈락"""
+        policy = self.DummyPolicy(district='강남구')
+        self.assertFalse(is_policy_matching_user(policy, {'residence': '마포구'}))
+
+    def test_no_substring_false_positive(self):
+        """'강남' != '강남구' → 탈락 (substring 오탐 방지)"""
+        policy = self.DummyPolicy(district='강남')
+        self.assertFalse(is_policy_matching_user(policy, {'residence': '강남구'}))
+
+    def test_policy_no_district_passes(self):
+        """정책에 지역 제한 없으면 통과"""
+        policy = self.DummyPolicy(district='')
+        self.assertTrue(is_policy_matching_user(policy, {'residence': '마포구'}))
+
+    def test_user_no_residence_passes(self):
+        """사용자 거주지 없으면 통과"""
+        policy = self.DummyPolicy(district='강남구')
+        self.assertTrue(is_policy_matching_user(policy, {'residence': ''}))
+
+
+# =============================================================================
+# [BRAIN4-47] housing_type 영→한 정규화 테스트
+# =============================================================================
+
+class TestNormalizeHousingType(SimpleTestCase):
+    """housing_type 영문 enum이 한글로 정규화됨"""
+
+    def test_jeonse_to_korean(self):
+        result = normalize_user_info({'housing_type': 'jeonse'})
+        self.assertEqual(result['housing_type'], '전세')
+
+    def test_monthly_to_korean(self):
+        result = normalize_user_info({'housing_type': 'monthly'})
+        self.assertEqual(result['housing_type'], '월세')
+
+    def test_already_korean_unchanged(self):
+        result = normalize_user_info({'housing_type': '전세'})
+        self.assertEqual(result['housing_type'], '전세')
+
+    def test_none_unchanged(self):
+        result = normalize_user_info({'housing_type': None})
+        self.assertIsNone(result['housing_type'])
+
+    def test_whitespace_stripped(self):
+        result = normalize_user_info({'housing_type': ' 전세 '})
+        self.assertEqual(result['housing_type'], '전세')
+
+
+# =============================================================================
+# [BRAIN4-47] 카테고리 중복 제거 테스트
+# =============================================================================
+
+class TestRelevantCategoriesDedup(SimpleTestCase):
+    """_get_relevant_categories가 중복 카테고리 없이 순서 보존"""
+
+    def test_income_and_special_no_dup(self):
+        """소득+특수조건 둘 다 해당 시 '취약계층 및 금융지원' 1번만"""
+        cats = _get_relevant_categories({
+            'income': 2000,
+            'special_conditions': ['한부모'],
+        })
+        self.assertEqual(cats.count('취약계층 및 금융지원'), 1)
+
+    def test_income_and_art_no_dup(self):
+        """소득+예술관심 둘 다 해당 시 '복지문화' 1번만"""
+        cats = _get_relevant_categories({
+            'income': 2000,
+            'interests': ['예술'],
+        })
+        self.assertEqual(cats.count('복지문화'), 1)
+
+    def test_order_preserved(self):
+        """순서가 보존되는지 확인 (주거 → 소득 → 특수조건 순)"""
+        cats = _get_relevant_categories({
+            'housing_type': '월세',
+            'income': 2000,
+            'special_conditions': ['장애'],
+        })
+        self.assertIn('주거', cats)
+        self.assertIn('복지문화', cats)
+        idx_housing = cats.index('주거')
+        idx_income = cats.index('복지문화')
+        self.assertLess(idx_housing, idx_income)
+
+
+# =============================================================================
+# [BRAIN4-47] restriction code 테스트 (S7 공통함수 추출 보강)
+# =============================================================================
+
+class TestRestrictionCodePasses(SimpleTestCase):
+    """제한없음 코드가 통과하는지 확인"""
+
+    class DummyPolicy:
+        def __init__(self, employment_status='', education_status='',
+                     marriage_status='', income_level='', income_max=None):
+            self.policy_id = 'P-001'
+            self.employment_status = employment_status
+            self.education_status = education_status
+            self.marriage_status = marriage_status
+            self.income_level = income_level
+            self.income_max = income_max
+
+    def test_job_restriction_code_passes(self):
+        """취업 제한없음 코드(0013010) → 통과"""
+        policy = self.DummyPolicy(employment_status='0013010')
+        self.assertTrue(_passes_profile_code_filters(policy, {'job_code': '0013001'}))
+
+    def test_education_restriction_code_passes(self):
+        """학력 제한없음 코드(0049010) → 통과"""
+        policy = self.DummyPolicy(education_status='0049010')
+        self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049002'}))
