@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 # .env 파일 로드
 load_dotenv(Path(__file__).resolve().parent.parent.parent / '.env')
@@ -206,6 +207,9 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-chat-session-token',
+]
 
 # CSRF Settings
 CSRF_COOKIE_HTTPONLY = False  # 클라이언트(JS)에서 쿠키 읽기 허용 (X-CSRFToken 헤더 전송용)
