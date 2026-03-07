@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from etl.services.transformer import PolicyTransformer, ZIPCD_TO_DISTRICT
 
@@ -228,3 +228,146 @@ class PolicyOverrideGoldenTests(SimpleTestCase):
                     unknown,
                     f"{policy_id}.{field}: unknown codes {unknown}",
                 )
+
+
+# =============================================================================
+# [BRAIN4-45] _parse_int 버그 수정 테스트
+# =============================================================================
+
+
+class ParseIntTests(SimpleTestCase):
+    def setUp(self):
+        self.transformer = PolicyTransformer()
+
+    def test_zero_string_returns_zero(self):
+        self.assertEqual(self.transformer._parse_int('0'), 0)
+
+    def test_zero_int_returns_zero(self):
+        self.assertEqual(self.transformer._parse_int(0), 0)
+
+    def test_none_returns_none(self):
+        self.assertIsNone(self.transformer._parse_int(None))
+
+    def test_empty_string_returns_none(self):
+        self.assertIsNone(self.transformer._parse_int(''))
+
+    def test_numeric_string(self):
+        self.assertEqual(self.transformer._parse_int('3500'), 3500)
+
+    def test_non_numeric_returns_none(self):
+        self.assertIsNone(self.transformer._parse_int('abc'))
+
+
+# =============================================================================
+# [BRAIN4-45] 특수조건 필드 변환 테스트
+# =============================================================================
+
+
+class TransformerSpecialConditionTests(SimpleTestCase):
+    def setUp(self):
+        self.transformer = PolicyTransformer()
+        self.base_raw = {
+            'plcyNo': 'TEST-001',
+            'plcyNm': '테스트 정책',
+            'plcyExplnCn': '설명',
+            'plcySprtCn': '지원내용',
+        }
+
+    def test_sbiz_cd_preserved(self):
+        raw = {**self.base_raw, 'sbizCd': '0014001,0014003'}
+        result = self.transformer.transform(raw)
+        self.assertEqual(result.sbiz_cd, '0014001,0014003')
+
+    def test_is_for_low_income(self):
+        raw = {**self.base_raw, 'sbizCd': '0014001,0014003'}
+        result = self.transformer.transform(raw)
+        self.assertTrue(result.is_for_low_income)
+
+    def test_is_for_single_parent(self):
+        raw = {**self.base_raw, 'sbizCd': '0014004'}
+        result = self.transformer.transform(raw)
+        self.assertTrue(result.is_for_single_parent)
+
+    def test_is_for_disabled(self):
+        raw = {**self.base_raw, 'sbizCd': '0014005'}
+        result = self.transformer.transform(raw)
+        self.assertTrue(result.is_for_disabled)
+
+    def test_no_sbiz_code_all_false(self):
+        raw = {**self.base_raw, 'sbizCd': ''}
+        result = self.transformer.transform(raw)
+        self.assertFalse(result.is_for_low_income)
+        self.assertFalse(result.is_for_single_parent)
+        self.assertFalse(result.is_for_disabled)
+
+    def test_sbiz_cd_none_no_error(self):
+        raw = {**self.base_raw, 'sbizCd': None}
+        result = self.transformer.transform(raw)
+        self.assertEqual(result.sbiz_cd, '')
+        self.assertFalse(result.is_for_low_income)
+
+    def test_newlywed_exclusive_text(self):
+        raw = {**self.base_raw, 'plcyExplnCn': '신혼부부 전용 주거 지원'}
+        result = self.transformer.transform(raw)
+        self.assertTrue(result.is_for_newlywed)
+
+    def test_newlywed_inclusive_text(self):
+        raw = {**self.base_raw, 'plcyExplnCn': '신혼부부 우대 가능'}
+        result = self.transformer.transform(raw)
+        self.assertFalse(result.is_for_newlywed)
+
+    def test_no_newlywed_keyword(self):
+        raw = {**self.base_raw, 'plcyExplnCn': '일반 청년 정책'}
+        result = self.transformer.transform(raw)
+        self.assertFalse(result.is_for_newlywed)
+
+
+# =============================================================================
+# [BRAIN4-45] Loader 특수조건 필드 DB 적재 테스트
+# =============================================================================
+from etl.services.loader import PolicyLoader
+from etl.services.transformer import TransformedPolicy
+from policies.models import Policy
+
+
+class LoaderSpecialConditionTests(TestCase):
+    def test_special_condition_fields_saved_to_db(self):
+        policy = TransformedPolicy(
+            policy_id='LOADER-TEST-001',
+            title='테스트',
+            description='설명',
+            support_content='지원',
+            age_min=19,
+            age_max=39,
+            income_level='',
+            income_min=None,
+            income_max=None,
+            marriage_status='',
+            employment_status='',
+            education_status='',
+            apply_start_date=None,
+            apply_end_date=None,
+            business_start_date=None,
+            business_end_date=None,
+            apply_method='',
+            apply_url='',
+            district=None,
+            category='일자리',
+            subcategory='',
+            sbiz_cd='0014003,0014005',
+            is_for_single_parent=False,
+            is_for_disabled=True,
+            is_for_low_income=True,
+            is_for_newlywed=False,
+            created_at=None,
+            updated_at=None,
+        )
+        loader = PolicyLoader()
+        loader.load([policy])
+
+        saved = Policy.objects.get(policy_id='LOADER-TEST-001')
+        self.assertEqual(saved.sbiz_cd, '0014003,0014005')
+        self.assertTrue(saved.is_for_low_income)
+        self.assertTrue(saved.is_for_disabled)
+        self.assertFalse(saved.is_for_single_parent)
+        self.assertFalse(saved.is_for_newlywed)

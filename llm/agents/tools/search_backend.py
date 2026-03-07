@@ -134,7 +134,7 @@ def _filter_by_income_max(
         return policies
     return [
         p for p in policies
-        if p.get("income_max") is None or p["income_max"] >= user_income
+        if not p.get("income_max") or p["income_max"] >= user_income
     ]
 
 

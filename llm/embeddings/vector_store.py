@@ -421,5 +421,53 @@ def run_tests():
     print("="*60 + "\n")
 
 
+def get_db_stats_lightweight() -> Dict[str, Any]:
+    """벡터 DB 통계 (OpenAI 키 불필요 — chromadb 직접 접근)"""
+    if not os.path.exists(DB_PATH):
+        return {"exists": False, "path": DB_PATH}
+
+    import chromadb
+    client = chromadb.PersistentClient(path=DB_PATH)
+    collections = client.list_collections()
+    stats = {
+        "exists": True,
+        "path": DB_PATH,
+        "collections": {},
+    }
+    for col in collections:
+        stats["collections"][col.name] = col.count()
+    return stats
+
+
 if __name__ == "__main__":
-    run_tests()
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(description="ChromaDB 벡터 DB 관리 CLI")
+    parser.add_argument('--reindex', action='store_true', help='기존 DB 삭제 후 재생성 (OpenAI 키 필요)')
+    parser.add_argument('--stats', action='store_true', help='현재 DB 통계 출력 (OpenAI 키 불필요)')
+    args = parser.parse_args()
+
+    if args.stats:
+        stats = get_db_stats_lightweight()
+        if not stats["exists"]:
+            print(f"벡터 DB 없음: {stats['path']}")
+        else:
+            print(f"벡터 DB 경로: {stats['path']}")
+            for name, count in stats["collections"].items():
+                print(f"  컬렉션 '{name}': {count}건")
+    elif args.reindex:
+        print("=== ChromaDB 재인덱싱 시작 ===")
+        before = get_db_stats_lightweight()
+        before_count = sum(before.get("collections", {}).values())
+        print(f"변경 전: {before_count}건")
+
+        start = time.time()
+        create_vector_db(force_recreate=True)
+        elapsed = time.time() - start
+
+        after = get_db_stats_lightweight()
+        after_count = sum(after.get("collections", {}).values())
+        print(f"변경 후: {after_count}건 ({elapsed:.1f}초 소요)")
+    else:
+        run_tests()

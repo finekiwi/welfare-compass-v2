@@ -14,6 +14,11 @@ from typing import Optional, Any, Tuple
 from dataclasses import dataclass
 from django.utils import timezone
 from .overrides import apply_overrides
+from policies.services.matching_keys import (
+    SBIZ_CODE_LOW_INCOME,
+    SBIZ_CODE_SINGLE_PARENT,
+    SBIZ_CODE_DISABLED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +72,45 @@ ZIPCD_TO_DISTRICT = {
 }
 
 
+def _is_newlywed_exclusive(policy_text: str) -> bool:
+    """
+    신혼부부 '전용' 정책인지 텍스트에서 판단
+    (API에 신혼부부 코드가 없으므로 텍스트 파싱 필요)
+
+    Returns:
+        True: 신혼부부 전용 (비신혼부부 제외해야 함)
+        False: 신혼부부 우대/가점 또는 해당없음 (모두 포함)
+    """
+    if '신혼' not in policy_text:
+        return False
+
+    # 포용적 표현 (이게 있으면 전용 아님 - 일반 청년도 지원 가능)
+    inclusive_patterns = [
+        '신혼부부 우대', '신혼부부 우선', '신혼부부 가점', '신혼부부 가산',
+        '신혼부부도 가능', '신혼부부도 신청', '신혼부부도 지원',
+        '신혼부부 포함', '신혼부부 해당자',
+        '신혼부부인 경우 우대', '신혼부부인 경우 가점',
+    ]
+
+    for pattern in inclusive_patterns:
+        if pattern in policy_text:
+            return False
+
+    # 배타적 표현 (이게 있으면 전용 - 신혼부부만 지원 가능)
+    exclusive_patterns = [
+        '신혼부부 전용', '신혼부부만 가능', '신혼부부만 신청',
+        '신혼부부만 지원', '신혼부부에 한해', '신혼부부에 한함',
+        '신혼부부에 한하여', '신혼부부 가구만',
+    ]
+
+    for pattern in exclusive_patterns:
+        if pattern in policy_text:
+            return True
+
+    # 패턴 없으면 포용적으로 판단 (전용 아님)
+    return False
+
+
 @dataclass
 class TransformedPolicy:
     """변환된 정책 데이터"""
@@ -104,6 +148,13 @@ class TransformedPolicy:
     category: str  # [RENAME] lclsf_nm → category (대분류: UI 표시용)
     subcategory: str  # [RENAME] mclsf_nm → subcategory (중분류: 매칭 로직용)
 
+    # 특수조건
+    sbiz_cd: str
+    is_for_single_parent: bool
+    is_for_disabled: bool
+    is_for_low_income: bool
+    is_for_newlywed: bool
+
     # 메타데이터
     created_at: Optional[datetime]  # [RENAME] frst_reg_dt → created_at
     updated_at: Optional[datetime]  # [RENAME] last_mdfcn_dt → updated_at
@@ -124,10 +175,20 @@ class PolicyTransformer:
         # 신청기간 정제: 연도 보정 (2024:+2, 2025:+1)
         aply_start, aply_end = self._parse_date_range_with_year_fix(raw.get('aplyYmd', ''))
 
+        raw_description = raw.get('plcyExplnCn') or ''
+        raw_support = raw.get('plcySprtCn') or ''
+
         normalized_title = self._normalize_text_years(raw.get('plcyNm', ''))
-        normalized_description = self._normalize_text_years(raw.get('plcyExplnCn', ''))
-        normalized_support_content = self._normalize_text_years(raw.get('plcySprtCn', ''))
+        normalized_description = self._normalize_text_years(raw_description)
+        normalized_support_content = self._normalize_text_years(raw_support)
         normalized_apply_method = self._normalize_text_years(raw.get('plcyAplyMthdCn', ''))
+
+        # [BRAIN4-45 A1-1] 특수조건 파싱
+        sbiz_cd = raw.get('sbizCd') or ''
+        is_for_single_parent = SBIZ_CODE_SINGLE_PARENT in sbiz_cd
+        is_for_disabled = SBIZ_CODE_DISABLED in sbiz_cd
+        is_for_low_income = SBIZ_CODE_LOW_INCOME in sbiz_cd
+        is_for_newlywed = _is_newlywed_exclusive(f"{raw_description} {raw_support}")
 
         # [BRAIN4-37 C02] 정책별 override 적용
         override_fields, _logs = apply_overrides(
@@ -166,6 +227,12 @@ class PolicyTransformer:
 
             category=raw.get('lclsfNm', '').strip(),  # [RENAME] lclsf_nm → category (대분류)
             subcategory=raw.get('mclsfNm', '').strip(),  # [RENAME] mclsf_nm → subcategory (중분류)
+
+            sbiz_cd=sbiz_cd,
+            is_for_single_parent=is_for_single_parent,
+            is_for_disabled=is_for_disabled,
+            is_for_low_income=is_for_low_income,
+            is_for_newlywed=is_for_newlywed,
 
             created_at=self._parse_datetime(raw.get('frstRegDt')),  # [RENAME] frst_reg_dt → created_at
             updated_at=self._parse_datetime(raw.get('lastMdfcnDt')),  # [RENAME] last_mdfcn_dt → updated_at
@@ -278,7 +345,7 @@ class PolicyTransformer:
             return None, None
 
     def _parse_int(self, value: Any) -> Optional[int]:
-        if not value or value == '' or value == '0':
+        if value is None or value == '':
             return None
         try:
             return int(value)

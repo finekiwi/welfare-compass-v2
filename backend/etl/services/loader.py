@@ -97,6 +97,11 @@ class PolicyLoader:
                 'district': policy.district,
                 'category': policy.category,  # [RENAME] lclsf_nm → category (대분류)
                 'subcategory': policy.subcategory,  # [RENAME] mclsf_nm → subcategory (중분류)
+                'sbiz_cd': policy.sbiz_cd,
+                'is_for_single_parent': policy.is_for_single_parent,
+                'is_for_disabled': policy.is_for_disabled,
+                'is_for_low_income': policy.is_for_low_income,
+                'is_for_newlywed': policy.is_for_newlywed,
                 'created_at': policy.created_at,  # [RENAME] frst_reg_dt → created_at
                 'updated_at': policy.updated_at,  # [RENAME] last_mdfcn_dt → updated_at
             }
