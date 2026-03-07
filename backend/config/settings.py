@@ -120,7 +120,11 @@ import dj_database_url
 _database_url = os.environ.get('DATABASE_URL')
 if _database_url:
     DATABASES = {
-        'default': dj_database_url.parse(_database_url, conn_max_age=600),
+        'default': dj_database_url.parse(
+            _database_url,
+            conn_max_age=600,
+            ssl_require=True,
+        ),
     }
 else:
     DATABASES = {
