@@ -46,6 +46,10 @@ CMD cd /app/backend && \
     python manage.py migrate --noinput && \
     echo "=== Collecting static files ===" && \
     python manage.py collectstatic --noinput && \
+    echo "=== Fetching policy data (ETL) ===" && \
+    python manage.py run_etl --fetch-only && \
+    echo "=== Building vector index ===" && \
+    python -m llm.embeddings.vector_store --reindex && \
     echo "=== Starting gunicorn ===" && \
     gunicorn config.wsgi:application \
     --bind 0.0.0.0:${PORT:-8000} \
