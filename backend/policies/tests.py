@@ -25,6 +25,35 @@ from policies.services.matching_keys import (
 )
 
 
+class DummyPolicy:
+    """테스트용 Policy 스텁 (통합)"""
+    def __init__(self, policy_id='P-001', age_min=None, age_max=None,
+                 district='', subcategory='', category='',
+                 employment_status='', education_status='',
+                 marriage_status='', income_level='', income_max=None,
+                 sbiz_cd='', is_for_single_parent=False,
+                 is_for_disabled=False, is_for_low_income=False,
+                 is_for_newlywed=False, description='', support_content=''):
+        self.policy_id = policy_id
+        self.age_min = age_min
+        self.age_max = age_max
+        self.district = district
+        self.subcategory = subcategory
+        self.category = category
+        self.employment_status = employment_status
+        self.education_status = education_status
+        self.marriage_status = marriage_status
+        self.income_level = income_level
+        self.income_max = income_max
+        self.sbiz_cd = sbiz_cd
+        self.is_for_single_parent = is_for_single_parent
+        self.is_for_disabled = is_for_disabled
+        self.is_for_low_income = is_for_low_income
+        self.is_for_newlywed = is_for_newlywed
+        self.description = description
+        self.support_content = support_content
+
+
 class TestNormalization(TestCase):
     """특수조건 alias 정규화 테스트"""
 
@@ -210,17 +239,12 @@ class TestWebChatbotCategoryCapContract(SimpleTestCase):
 class TestSelectDiverseCategories(SimpleTestCase):
     """[BRAIN4-37 C07] 카테고리 제한 동작 테스트"""
 
-    class DummyPolicy:
-        def __init__(self, subcategory, category):
-            self.subcategory = subcategory
-            self.category = category
-
     def test_no_cap_returns_all_scored_order(self):
         scored = [
-            (self.DummyPolicy('주거', '주거'), 100),
-            (self.DummyPolicy('주거', '주거'), 95),
-            (self.DummyPolicy('주거', '주거'), 90),
-            (self.DummyPolicy('일자리', '일자리'), 85),
+            (DummyPolicy(subcategory='주거', category='주거'), 100),
+            (DummyPolicy(subcategory='주거', category='주거'), 95),
+            (DummyPolicy(subcategory='주거', category='주거'), 90),
+            (DummyPolicy(subcategory='일자리', category='일자리'), 85),
         ]
 
         result = _select_diverse_categories(scored, max_per_category=None, limit=None)
@@ -229,10 +253,10 @@ class TestSelectDiverseCategories(SimpleTestCase):
 
     def test_cap_2_limits_per_category(self):
         scored = [
-            (self.DummyPolicy('주거', '주거'), 100),
-            (self.DummyPolicy('주거', '주거'), 95),
-            (self.DummyPolicy('주거', '주거'), 90),
-            (self.DummyPolicy('일자리', '일자리'), 85),
+            (DummyPolicy(subcategory='주거', category='주거'), 100),
+            (DummyPolicy(subcategory='주거', category='주거'), 95),
+            (DummyPolicy(subcategory='주거', category='주거'), 90),
+            (DummyPolicy(subcategory='일자리', category='일자리'), 85),
         ]
 
         result = _select_diverse_categories(scored, max_per_category=2, limit=None)
@@ -243,50 +267,33 @@ class TestSelectDiverseCategories(SimpleTestCase):
 class TestFailOpenGuard(SimpleTestCase):
     """[BRAIN4-37 C06] unknown 코드 fail-open 가드 테스트"""
 
-    class DummyPolicy:
-        def __init__(
-            self,
-            policy_id='P-001',
-            employment_status='',
-            education_status='',
-            marriage_status='',
-            income_level='',
-            income_max=None,
-        ):
-            self.policy_id = policy_id
-            self.employment_status = employment_status
-            self.education_status = education_status
-            self.marriage_status = marriage_status
-            self.income_level = income_level
-            self.income_max = income_max
-
     def test_job_unknown_only_passes(self):
-        policy = self.DummyPolicy(employment_status='0013009')
+        policy = DummyPolicy(employment_status='0013009')
         user = {'job_code': '0013001'}
         self.assertTrue(_passes_profile_code_filters(policy, user))
 
     def test_job_mixed_known_and_unknown_uses_known_only(self):
-        policy = self.DummyPolicy(employment_status='0013003,0013009')
+        policy = DummyPolicy(employment_status='0013003,0013009')
         self.assertFalse(_passes_profile_code_filters(policy, {'job_code': '0013001'}))
         self.assertTrue(_passes_profile_code_filters(policy, {'job_code': '0013003'}))
 
     def test_education_unknown_only_passes(self):
-        policy = self.DummyPolicy(education_status='0049009')
+        policy = DummyPolicy(education_status='0049009')
         user = {'education_code': '0049007'}
         self.assertTrue(_passes_profile_code_filters(policy, user))
 
     def test_education_mixed_known_and_unknown_uses_known_only(self):
-        policy = self.DummyPolicy(education_status='0049005,0049009')
+        policy = DummyPolicy(education_status='0049005,0049009')
         self.assertFalse(_passes_profile_code_filters(policy, {'education_code': '0049007'}))
         self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049005'}))
 
     def test_education_also_match_is_respected(self):
         # 사용자 0049005(대학재학)는 0049006(대졸예정) 정책도 매칭되어야 함
-        policy = self.DummyPolicy(education_status='0049006,0049009')
+        policy = DummyPolicy(education_status='0049006,0049009')
         self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049005'}))
 
     def test_marriage_filter_kept(self):
-        policy = self.DummyPolicy(marriage_status='0055001')  # 기혼 전용
+        policy = DummyPolicy(marriage_status='0055001')  # 기혼 전용
         self.assertFalse(_passes_profile_code_filters(policy, {'marriage_code': '0055002'}))
         self.assertTrue(_passes_profile_code_filters(policy, {'marriage_code': '0055001'}))
 
@@ -303,68 +310,58 @@ from policies.services.matching import (
 class TestIncomeMatching(SimpleTestCase):
     """소득 요건 매칭 테스트 (8개)"""
 
-    class DummyPolicy:
-        def __init__(self, income_level='', income_max=None):
-            self.income_level = income_level
-            self.income_max = income_max
-
     def test_income_any_passes(self):
         """0043001(무관) → pass"""
-        policy = self.DummyPolicy(income_level='0043001')
+        policy = DummyPolicy(income_level='0043001')
         self.assertTrue(_matches_income_requirement(policy, {'income': 5000}))
 
     def test_income_annual_under_passes(self):
         """0043002(연소득) user < max → pass"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=5000)
+        policy = DummyPolicy(income_level='0043002', income_max=5000)
         self.assertTrue(_matches_income_requirement(policy, {'income': 3000}))
 
     def test_income_annual_over_fails(self):
         """0043002(연소득) user > max → fail"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=5000)
+        policy = DummyPolicy(income_level='0043002', income_max=5000)
         self.assertFalse(_matches_income_requirement(policy, {'income': 6000}))
 
     def test_income_annual_equal_passes(self):
         """0043002(연소득) user == max → pass"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=5000)
+        policy = DummyPolicy(income_level='0043002', income_max=5000)
         self.assertTrue(_matches_income_requirement(policy, {'income': 5000}))
 
     def test_income_user_none_failopen(self):
         """user income 미입력 → fail-open (pass)"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=5000)
+        policy = DummyPolicy(income_level='0043002', income_max=5000)
         self.assertTrue(_matches_income_requirement(policy, {}))
 
     def test_income_other_passes(self):
         """0043003(기타) → pass"""
-        policy = self.DummyPolicy(income_level='0043003')
+        policy = DummyPolicy(income_level='0043003')
         self.assertTrue(_matches_income_requirement(policy, {'income': 5000}))
 
     def test_income_empty_passes(self):
         """빈값 → pass"""
-        policy = self.DummyPolicy(income_level='')
+        policy = DummyPolicy(income_level='')
         self.assertTrue(_matches_income_requirement(policy, {'income': 5000}))
 
     def test_income_unknown_code_passes(self):
         """알수없는 코드 → pass (fail-open)"""
-        policy = self.DummyPolicy(income_level='0043999')
+        policy = DummyPolicy(income_level='0043999')
         self.assertTrue(_matches_income_requirement(policy, {'income': 5000}))
 
 
 class TestIncomeMaxZeroFailopen(SimpleTestCase):
     """income_max=0 또는 None 가드 테스트"""
 
-    class DummyPolicy:
-        def __init__(self, income_level='', income_max=None):
-            self.income_level = income_level
-            self.income_max = income_max
-
     def test_income_annual_max_none_failopen(self):
         """0043002인데 income_max=None → fail-open"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=None)
+        policy = DummyPolicy(income_level='0043002', income_max=None)
         self.assertTrue(_matches_income_requirement(policy, {'income': 9999}))
 
     def test_income_annual_max_zero_failopen(self):
         """0043002인데 income_max=0 → fail-open"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=0)
+        policy = DummyPolicy(income_level='0043002', income_max=0)
         self.assertTrue(_matches_income_requirement(policy, {'income': 9999}))
 
 
@@ -537,46 +534,34 @@ class TestMedianIncomeConsistency(SimpleTestCase):
 class TestSbizCodeExactMatch(SimpleTestCase):
     """sbiz_cd가 set 분해되어 substring 오탐이 없음을 보장"""
 
-    class DummyPolicy:
-        def __init__(self, sbiz_cd='', is_for_single_parent=False,
-                     is_for_disabled=False, is_for_low_income=False,
-                     is_for_newlywed=False, description='', support_content=''):
-            self.sbiz_cd = sbiz_cd
-            self.is_for_single_parent = is_for_single_parent
-            self.is_for_disabled = is_for_disabled
-            self.is_for_low_income = is_for_low_income
-            self.is_for_newlywed = is_for_newlywed
-            self.description = description
-            self.support_content = support_content
-
     def test_sme_code_exact_match(self):
         """중소기업 코드 정확 매칭"""
-        policy = self.DummyPolicy(sbiz_cd='0014001')
+        policy = DummyPolicy(sbiz_cd='0014001')
         self.assertFalse(_check_special_conditions(policy, {}))
         self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['중소기업']}))
 
     def test_military_code_exact_match(self):
         """군인 코드 정확 매칭"""
-        policy = self.DummyPolicy(sbiz_cd='0014007')
+        policy = DummyPolicy(sbiz_cd='0014007')
         self.assertFalse(_check_special_conditions(policy, {}))
         self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['군인']}))
 
     def test_no_substring_false_positive(self):
         """0014001이 0014 포함이지만 0014만으로는 매칭 안 됨 (substring 오탐 방지)"""
-        policy = self.DummyPolicy(sbiz_cd='0014010')
+        policy = DummyPolicy(sbiz_cd='0014010')
         # 0014010은 SME(0014001)도 군인(0014007)도 아님 → 통과해야 함
         self.assertTrue(_check_special_conditions(policy, {}))
 
     def test_multiple_sbiz_codes(self):
         """쉼표 구분 복수 코드에서 정확 매칭"""
-        policy = self.DummyPolicy(sbiz_cd='0014001,0014007')
+        policy = DummyPolicy(sbiz_cd='0014001,0014007')
         self.assertFalse(_check_special_conditions(policy, {}))
         self.assertFalse(_check_special_conditions(policy, {'special_conditions': ['중소기업']}))
         self.assertTrue(_check_special_conditions(policy, {'special_conditions': ['중소기업', '군인']}))
 
     def test_empty_sbiz_cd_passes(self):
         """sbiz_cd 없으면 통과"""
-        policy = self.DummyPolicy(sbiz_cd='')
+        policy = DummyPolicy(sbiz_cd='')
         self.assertTrue(_check_special_conditions(policy, {}))
 
 
@@ -587,47 +572,29 @@ class TestSbizCodeExactMatch(SimpleTestCase):
 class TestDistrictExactMatch(SimpleTestCase):
     """is_policy_matching_user()에서 지역 비교가 exact match로 동작"""
 
-    class DummyPolicy:
-        def __init__(self, district='', age_min=None, age_max=None):
-            self.district = district
-            self.age_min = age_min
-            self.age_max = age_max
-            self.employment_status = ''
-            self.education_status = ''
-            self.marriage_status = ''
-            self.income_level = ''
-            self.income_max = None
-            self.sbiz_cd = ''
-            self.is_for_single_parent = False
-            self.is_for_disabled = False
-            self.is_for_low_income = False
-            self.is_for_newlywed = False
-            self.description = ''
-            self.support_content = ''
-
     def test_exact_match_passes(self):
         """'강남구' == '강남구' → 통과"""
-        policy = self.DummyPolicy(district='강남구')
+        policy = DummyPolicy(district='강남구')
         self.assertTrue(is_policy_matching_user(policy, {'residence': '강남구'}))
 
     def test_exact_match_fails(self):
         """'강남구' != '마포구' → 탈락"""
-        policy = self.DummyPolicy(district='강남구')
+        policy = DummyPolicy(district='강남구')
         self.assertFalse(is_policy_matching_user(policy, {'residence': '마포구'}))
 
     def test_no_substring_false_positive(self):
         """'강남' != '강남구' → 탈락 (substring 오탐 방지)"""
-        policy = self.DummyPolicy(district='강남')
+        policy = DummyPolicy(district='강남')
         self.assertFalse(is_policy_matching_user(policy, {'residence': '강남구'}))
 
     def test_policy_no_district_passes(self):
         """정책에 지역 제한 없으면 통과"""
-        policy = self.DummyPolicy(district='')
+        policy = DummyPolicy(district='')
         self.assertTrue(is_policy_matching_user(policy, {'residence': '마포구'}))
 
     def test_user_no_residence_passes(self):
         """사용자 거주지 없으면 통과"""
-        policy = self.DummyPolicy(district='강남구')
+        policy = DummyPolicy(district='강남구')
         self.assertTrue(is_policy_matching_user(policy, {'residence': ''}))
 
 
@@ -703,24 +670,14 @@ class TestRelevantCategoriesDedup(SimpleTestCase):
 class TestRestrictionCodePasses(SimpleTestCase):
     """제한없음 코드가 통과하는지 확인"""
 
-    class DummyPolicy:
-        def __init__(self, employment_status='', education_status='',
-                     marriage_status='', income_level='', income_max=None):
-            self.policy_id = 'P-001'
-            self.employment_status = employment_status
-            self.education_status = education_status
-            self.marriage_status = marriage_status
-            self.income_level = income_level
-            self.income_max = income_max
-
     def test_job_restriction_code_passes(self):
         """취업 제한없음 코드(0013010) → 통과"""
-        policy = self.DummyPolicy(employment_status='0013010')
+        policy = DummyPolicy(employment_status='0013010')
         self.assertTrue(_passes_profile_code_filters(policy, {'job_code': '0013001'}))
 
     def test_education_restriction_code_passes(self):
         """학력 제한없음 코드(0049010) → 통과"""
-        policy = self.DummyPolicy(education_status='0049010')
+        policy = DummyPolicy(education_status='0049010')
         self.assertTrue(_passes_profile_code_filters(policy, {'education_code': '0049002'}))
 
 
@@ -731,76 +688,70 @@ class TestRestrictionCodePasses(SimpleTestCase):
 class TestGetRejectionReasons(SimpleTestCase):
     """get_rejection_reasons()가 탈락사유를 정확히 반환"""
 
-    class DummyPolicy:
-        def __init__(self, age_min=None, age_max=None, district='',
-                     employment_status='', education_status='',
-                     marriage_status='', income_level='', income_max=None,
-                     sbiz_cd='', is_for_single_parent=False,
-                     is_for_disabled=False, is_for_low_income=False,
-                     is_for_newlywed=False, description='', support_content=''):
-            self.policy_id = 'P-001'
-            self.age_min = age_min
-            self.age_max = age_max
-            self.district = district
-            self.employment_status = employment_status
-            self.education_status = education_status
-            self.marriage_status = marriage_status
-            self.income_level = income_level
-            self.income_max = income_max
-            self.sbiz_cd = sbiz_cd
-            self.is_for_single_parent = is_for_single_parent
-            self.is_for_disabled = is_for_disabled
-            self.is_for_low_income = is_for_low_income
-            self.is_for_newlywed = is_for_newlywed
-            self.description = description
-            self.support_content = support_content
-
     def test_matching_returns_empty(self):
         """매칭되면 빈 리스트"""
-        policy = self.DummyPolicy(age_min=19, age_max=39)
+        policy = DummyPolicy(age_min=19, age_max=39)
         self.assertEqual(get_rejection_reasons(policy, {'age': 25}), [])
 
     def test_age_under(self):
         """나이 미달 사유"""
-        policy = self.DummyPolicy(age_min=19)
+        policy = DummyPolicy(age_min=19)
         reasons = get_rejection_reasons(policy, {'age': 17})
         self.assertEqual(len(reasons), 1)
         self.assertIn('나이 미달', reasons[0])
 
     def test_age_over(self):
         """나이 초과 사유"""
-        policy = self.DummyPolicy(age_max=39)
+        policy = DummyPolicy(age_max=39)
         reasons = get_rejection_reasons(policy, {'age': 45})
         self.assertEqual(len(reasons), 1)
         self.assertIn('나이 초과', reasons[0])
 
     def test_district_mismatch(self):
         """거주지 불일치 사유"""
-        policy = self.DummyPolicy(district='강남구')
+        policy = DummyPolicy(district='강남구')
         reasons = get_rejection_reasons(policy, {'residence': '마포구'})
         self.assertEqual(len(reasons), 1)
         self.assertIn('거주지 불일치', reasons[0])
 
     def test_income_over(self):
         """소득 초과 사유"""
-        policy = self.DummyPolicy(income_level='0043002', income_max=3000)
+        policy = DummyPolicy(income_level='0043002', income_max=3000)
         reasons = get_rejection_reasons(policy, {'income': 5000})
         self.assertIn('소득 초과', reasons)
 
-    def test_special_condition_mismatch(self):
-        """특수조건 미해당 사유"""
-        policy = self.DummyPolicy(is_for_disabled=True)
+    def test_special_condition_disabled(self):
+        """장애인 전용 정책 세분화 사유"""
+        policy = DummyPolicy(is_for_disabled=True)
         reasons = get_rejection_reasons(policy, {})
-        self.assertIn('특수조건 미해당', reasons)
+        self.assertIn('장애인 전용 정책', reasons)
+
+    def test_special_condition_single_parent(self):
+        """한부모 전용 정책 세분화 사유"""
+        policy = DummyPolicy(is_for_single_parent=True)
+        reasons = get_rejection_reasons(policy, {})
+        self.assertIn('한부모 전용 정책', reasons)
+
+    def test_special_condition_newlywed(self):
+        """신혼부부 전용 정책 세분화 사유"""
+        policy = DummyPolicy(is_for_newlywed=True)
+        reasons = get_rejection_reasons(policy, {})
+        self.assertIn('신혼부부 전용 정책', reasons)
+
+    def test_special_condition_sme(self):
+        """중소기업 전용 정책 세분화 사유"""
+        policy = DummyPolicy(sbiz_cd='0014001')
+        reasons = get_rejection_reasons(policy, {})
+        self.assertIn('중소기업 전용 정책', reasons)
 
     def test_multiple_reasons_collected(self):
         """여러 사유가 동시에 수집됨"""
-        policy = self.DummyPolicy(age_max=30, district='강남구')
+        policy = DummyPolicy(age_max=30, district='강남구')
         reasons = get_rejection_reasons(policy, {'age': 35, 'residence': '마포구'})
         self.assertEqual(len(reasons), 2)
 
     def test_is_policy_matching_user_uses_reasons(self):
         """is_policy_matching_user가 get_rejection_reasons 기반으로 동작"""
-        policy = self.DummyPolicy(age_min=19, age_max=39)
+        policy = DummyPolicy(age_min=19, age_max=39)
         self.assertTrue(is_policy_matching_user(policy, {'age': 25}))
         self.assertFalse(is_policy_matching_user(policy, {'age': 45}))

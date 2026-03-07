@@ -490,6 +490,35 @@ def _check_special_conditions(policy, user_info):
     return True
 
 
+def _get_special_condition_reasons(policy, user_info) -> list[str]:
+    """특수조건 탈락사유를 세분화하여 반환."""
+    user_special = user_info.get('special_conditions', [])
+    reasons = []
+
+    if policy.is_for_single_parent and '한부모' not in user_special:
+        reasons.append('한부모 전용 정책')
+    if policy.is_for_disabled and '장애' not in user_special:
+        reasons.append('장애인 전용 정책')
+    if policy.is_for_low_income and '기초수급' not in user_special:
+        reasons.append('기초수급자 전용 정책')
+    if policy.is_for_newlywed and '신혼' not in user_special:
+        reasons.append('신혼부부 전용 정책')
+
+    sbiz_codes = parse_code_string(policy.sbiz_cd)
+    if SBIZ_CODE_SME in sbiz_codes and '중소기업' not in user_special:
+        reasons.append('중소기업 전용 정책')
+    if SBIZ_CODE_MILITARY in sbiz_codes and '군인' not in user_special:
+        reasons.append('군인 전용 정책')
+
+    policy_text = f"{policy.description or ''} {policy.support_content or ''}"
+    if '1인가구 전용' in policy_text or '1인가구만' in policy_text:
+        household_size = user_info.get('household_size')
+        if household_size and household_size != 1:
+            reasons.append('1인가구 전용 정책')
+
+    return reasons
+
+
 def get_rejection_reasons(policy, user_info: dict) -> list[str]:
     """
     정책이 사용자와 매칭되지 않는 사유를 반환.
@@ -533,8 +562,7 @@ def get_rejection_reasons(policy, user_info: dict) -> list[str]:
         reasons.append('소득 초과')
 
     # 4. 특수조건
-    if not _check_special_conditions(policy, user_info):
-        reasons.append('특수조건 미해당')
+    reasons.extend(_get_special_condition_reasons(policy, user_info))
 
     return reasons
 
