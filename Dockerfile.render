@@ -36,20 +36,27 @@ RUN pip install --no-cache-dir \
 COPY backend/ /app/backend/
 COPY llm/ /app/llm/
 
+# === 빌드 타임: ETL + 벡터 인덱싱 (deploy 시 1회만 실행) ===
+ARG YOUTH_API_KEY
+ARG OPENAI_API_KEY
+ARG DJANGO_SECRET_KEY=build-time-placeholder
+
+RUN cd /app/backend && \
+    DJANGO_DEBUG=True \
+    YOUTH_API_KEY=${YOUTH_API_KEY} \
+    python manage.py run_etl --fetch-only && \
+    OPENAI_API_KEY=${OPENAI_API_KEY} \
+    python -m llm.embeddings.vector_store --reindex
+
 # 정적 파일 수집
 RUN cd /app/backend && python manage.py collectstatic --noinput 2>/dev/null || true
 
 EXPOSE ${PORT:-8000}
 
+# === 런타임: migrate + gunicorn만 (cold start 최소화) ===
 CMD cd /app/backend && \
     echo "=== Running migrations ===" && \
     python manage.py migrate --noinput && \
-    echo "=== Collecting static files ===" && \
-    python manage.py collectstatic --noinput && \
-    echo "=== Fetching policy data (ETL) ===" && \
-    python manage.py run_etl --fetch-only && \
-    echo "=== Building vector index ===" && \
-    python -m llm.embeddings.vector_store --reindex && \
     echo "=== Starting gunicorn ===" && \
     gunicorn config.wsgi:application \
     --bind 0.0.0.0:${PORT:-8000} \
