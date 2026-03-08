@@ -352,6 +352,7 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 {
                     "policy_id": policy.get("policy_id", ""),
                     "title": policy.get("title", ""),
+                    "apply_url": policy.get("apply_url", ""),
                     "is_eligible": is_eligible,
                     "reasons": reasons,
                     "details": details,
