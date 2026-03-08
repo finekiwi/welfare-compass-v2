@@ -23,6 +23,21 @@ from policies.services.matching_keys import (
 logger = logging.getLogger(__name__)
 
 
+# 서울 + 중앙부처만 허용: 비서울 광역자치단체 등록기관은 제외
+EXCLUDED_REGIONS = {
+    '경기도', '인천광역시', '강원특별자치도', '충청북도', '충청남도',
+    '세종특별자치시', '대전광역시', '전북특별자치도', '전라남도', '광주광역시',
+    '경상북도', '대구광역시', '경상남도', '부산광역시', '울산광역시',
+    '제주특별자치도',
+}
+
+
+def _is_regional_excluded(raw: dict) -> bool:
+    """비서울 광역자치단체 정책 여부 판단 (True면 제외)"""
+    inst = (raw.get('rgtrHghrkInstCdNm') or '').strip()
+    return inst in EXCLUDED_REGIONS
+
+
 # 나이 추론 규칙 (키워드 기반)
 AGE_RULES = [
     # (키워드 리스트, min, max, 라벨)
@@ -243,6 +258,9 @@ class PolicyTransformer:
         errors = []
 
         for raw in raw_list:
+            if _is_regional_excluded(raw):
+                logger.debug(f"지역 필터 제외: {raw.get('plcyNo')} ({raw.get('rgtrHghrkInstCdNm')})")
+                continue
             try:
                 results.append(self.transform(raw))
             except Exception as e:
