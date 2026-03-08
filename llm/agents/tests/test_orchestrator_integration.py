@@ -89,6 +89,13 @@ def _response_text(messages: list[Any]) -> str:
     return ""
 
 
+def _result_message(result: dict[str, Any]) -> str:
+    response = result.get("response")
+    if hasattr(response, "message"):
+        return str(response.message)
+    return str(response or "")
+
+
 def _assert_subsequence(items: list[str], expected: list[str]) -> None:
     idx = 0
     for item in items:
@@ -399,8 +406,9 @@ class TestOrchestratorIntegrationContracts:
         result = _run_agent_with_skip(agent, "추천해줘", thread_id=f"it-{uuid.uuid4().hex}")
         checks = [call for call in call_log if call["name"] == "check_eligibility"]
         if not checks:
-            assert result["response"]
-            assert ("?" in result["response"]) or ("알려" in result["response"]) or ("조건" in result["response"])
+            response = _result_message(result)
+            assert response
+            assert ("?" in response) or ("알려" in response) or ("조건" in response)
             return
         policies_arg = str(checks[-1]["args"].get("policies", "")).strip()
         assert policies_arg in {"all", "all_policies"}
@@ -412,7 +420,7 @@ class TestOrchestratorIntegrationContracts:
         if search_count >= 2:
             return
 
-        response = result.get("response", "") or ""
+        response = _result_message(result)
         assert response
 
         normalized = response.lower().replace(" ", "")
@@ -599,9 +607,10 @@ class TestOrchestratorIntegrationContracts:
 
         agent, _ = _build_stub_agent(search_impl=broken_search)
         result = _run_agent_with_skip(agent, "주거 정책 알려줘", thread_id=f"it-{uuid.uuid4().hex}")
-        assert result["response"]
+        response = _result_message(result)
+        assert response
         if result["error"] is not None:
-            assert "오류" in result["response"] or "죄송" in result["response"]
+            assert "오류" in response or "죄송" in response
 
     def test_itg_multiturn_accumulates_user_info(self):
         agent, call_log = _build_stub_agent()
@@ -836,7 +845,8 @@ class TestOrchestratorIntegrationContracts:
         counts = Counter(call["name"] for call in result["tool_calls"])
         assert all(count <= 3 for count in counts.values())
         if result["error"] is not None:
-            assert "recursion" in result["error"].lower() or "오류" in result["response"]
+            response = _result_message(result)
+            assert "recursion" in result["error"].lower() or "오류" in response
 
 
 @pytest.mark.integration
@@ -848,7 +858,7 @@ class TestOrchestratorLiveSmoke:
     def test_live_smoke_chitchat_response(self):
         agent = create_agent(model="gpt-4o-mini", temperature=0, use_short_prompt=False)
         result = _run_agent_with_skip(agent, "안녕!", thread_id=f"live-{uuid.uuid4().hex}")
-        assert result["response"]
+        assert _result_message(result)
 
     def test_live_smoke_matching_response(self):
         agent = create_agent(model="gpt-4o-mini", temperature=0, use_short_prompt=False)
@@ -857,7 +867,7 @@ class TestOrchestratorLiveSmoke:
             "27살 강남구 사는데 뭐 받을 수 있어?",
             thread_id=f"live-{uuid.uuid4().hex}",
         )
-        assert result["response"]
+        assert _result_message(result)
         assert isinstance(result["tool_calls"], list)
 
     def test_live_smoke_stream_emits_chunks(self):
@@ -879,4 +889,4 @@ class TestOrchestratorLiveSmoke:
     def test_live_smoke_empty_input_resilience(self):
         agent = create_agent(model="gpt-4o-mini", temperature=0, use_short_prompt=False)
         result = _run_agent_with_skip(agent, "", thread_id=f"live-{uuid.uuid4().hex}")
-        assert result["response"]
+        assert _result_message(result)

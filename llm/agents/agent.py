@@ -12,6 +12,7 @@
     response = run_agent(agent, "27살인데 월세 지원 받을 수 있어요?")
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 
+from .schemas import ChatResponse
 from .tools import create_tools
 from .tools.check_eligibility import PolicyFetcher
 from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT_SHORT
@@ -182,6 +184,49 @@ async def close_agent_mcp(agent) -> None:
 # ============================================================================
 
 
+def _extract_final_ai_text(messages: list) -> str:
+    for msg in reversed(messages):
+        if hasattr(msg, "content") and msg.type == "ai":
+            content = msg.content
+            return content if isinstance(content, str) else str(content)
+    return ""
+
+
+def _strip_json_code_fence(raw_text: str) -> str:
+    stripped = raw_text.strip()
+    if not stripped.startswith("```"):
+        return raw_text
+
+    lines = stripped.splitlines()
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        opening = lines[0].strip().lower()
+        if opening in {"```", "```json"}:
+            return "\n".join(lines[1:-1]).strip()
+    return raw_text
+
+
+def _parse_chat_response(raw_text: str) -> tuple[ChatResponse, bool]:
+    stripped = _strip_json_code_fence(raw_text).strip()
+    decoder = json.JSONDecoder()
+    candidates = [stripped]
+
+    first_brace = stripped.find("{")
+    if first_brace > 0:
+        candidates.append(stripped[first_brace:])
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed, _end = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return ChatResponse.from_dict(parsed), True
+
+    return ChatResponse(message=raw_text, policies=[], follow_up=None), False
+
+
 def run_agent(
     agent,
     message: str,
@@ -199,7 +244,8 @@ def run_agent(
     
     Returns:
         {
-            "response": 최종 응답 텍스트,
+            "response": ChatResponse,
+            "raw_text": 최종 AI 원문,
             "tool_calls": 호출된 도구 목록,
             "messages": 전체 메시지 히스토리,
             "error": 에러 발생 시 에러 메시지 (없으면 None),
@@ -222,13 +268,8 @@ def run_agent(
         
         # 결과 파싱
         messages = result.get("messages", [])
-        
-        # 마지막 AI 메시지 추출
-        response = ""
-        for msg in reversed(messages):
-            if hasattr(msg, "content") and msg.type == "ai":
-                response = msg.content
-                break
+        raw_text = _extract_final_ai_text(messages)
+        response, parsed_ok = _parse_chat_response(raw_text)
         
         # 도구 호출 추출
         tool_calls = []
@@ -244,11 +285,14 @@ def run_agent(
             print("\n=== Tool Calls ===")
             for tc in tool_calls:
                 print(f"  - {tc['name']}: {tc['args']}")
+            print("\n=== Structured Output Parse ===")
+            print("  - success" if parsed_ok else "  - fallback to raw_text")
             print("\n=== Response ===")
-            print(response)
+            print(raw_text)
         
         return {
             "response": response,
+            "raw_text": raw_text,
             "tool_calls": tool_calls,
             "messages": messages,
             "error": None,
@@ -259,9 +303,16 @@ def run_agent(
         
         if verbose:
             print(f"\n=== Error ===\n{error_msg}")
+
+        fallback_text = "죄송해요, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요! 🙏"
         
         return {
-            "response": "죄송해요, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요! 🙏",
+            "response": ChatResponse(
+                message=fallback_text,
+                policies=[],
+                follow_up=None,
+            ),
+            "raw_text": fallback_text,
             "tool_calls": [],
             "messages": [],
             "error": error_msg,
@@ -314,7 +365,7 @@ def chat(message: str, thread_id: str = "default") -> str:
         chat._agent = create_agent(checkpointer=chat._checkpointer)
     
     result = run_agent(chat._agent, message, thread_id=thread_id)
-    return result["response"]
+    return result["response"].message
 
 
 # ============================================================================
@@ -347,6 +398,6 @@ if __name__ == "__main__":
         if result["error"]:
             print(f"❌ 에러: {result['error']}")
         else:
-            print(f"\n🤖 복지나침반: {result['response'][:200]}...")
+            print(f"\n🤖 복지나침반: {result['response'].message[:200]}...")
         
         print("\n" + "=" * 60 + "\n")
