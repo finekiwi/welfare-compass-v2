@@ -1,9 +1,10 @@
 // features/chatbot/ChatWindow.tsx
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useChatbotStore } from "@/stores/chatbot.store";
+import { useAuthStore } from "@/stores/auth.store";
 import { useProfileStore } from "@/stores/profile.store";
 import { ChatMessageBubble } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
@@ -21,15 +22,23 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 
 export function ChatWindow() {
   const messages = useChatbotStore((s) => s.messages);
+  const isLoading = useChatbotStore((s) => s.isLoading);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const profile = useProfileStore((s) => s.profile);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 컴포넌트 마운트 시 프로필 불러오기
+  // 로그인 상태일 때만 프로필 불러오기
   useEffect(() => {
-    if (!profile) {
+    if (isAuthenticated && !profile) {
       fetchProfile();
     }
-  }, [profile, fetchProfile]);
+  }, [isAuthenticated, profile, fetchProfile]);
+
+  // 새 메시지마다 하단으로 스크롤
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // 소득 표시 포맷팅
   const formatIncome = () => {
@@ -46,11 +55,10 @@ export function ChatWindow() {
     return new Date().getFullYear() - profile.birthYear;
   };
 
-  // ✅ ③ 이미지 구조를 단순화한 2컬럼: (왼쪽 요약) + (오른쪽 대화)
   return (
-    <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[320px_1fr]">
-      {/* 왼쪽: 사용자 정보 요약 */}
-      <aside className="rounded-xl border bg-gray-50 p-4">
+    <div className={`grid grid-cols-1 gap-4 p-5 ${isAuthenticated ? "md:grid-cols-[320px_1fr]" : ""}`}>
+      {/* 왼쪽: 사용자 정보 요약 (로그인 시에만 표시) */}
+      {isAuthenticated && <aside className="rounded-xl border bg-gray-50 p-4">
         <div className="text-sm font-semibold">내 정보 요약</div>
         <div className="mt-3 space-y-2 text-xs text-gray-700">
           <Row
@@ -76,14 +84,22 @@ export function ChatWindow() {
             내정보 업데이트
           </button>
         </Link>
-      </aside>
+      </aside>}
 
       {/* 오른쪽: 채팅 */}
-      <section className="flex min-h-[520px] flex-col rounded-xl border">
-        <div className="flex-1 space-y-3 overflow-auto p-4">
+      <section className="flex h-[520px] flex-col rounded-xl border">
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {messages.map((m) => (
             <ChatMessageBubble key={m.id} message={m} />
           ))}
+          {isLoading && messages.length > 0 && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-600">
+                답변을 생성 중입니다...
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
         </div>
 
         <div className="border-t p-3">

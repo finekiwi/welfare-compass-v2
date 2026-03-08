@@ -14,6 +14,7 @@ export interface ChatSessionResponse {
   createdAt: number;
   expiresAt: number;
   messages: ChatMessage[];
+  sessionToken?: string;
 }
 
 export interface SendMessageResponse {

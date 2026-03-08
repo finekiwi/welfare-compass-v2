@@ -7,6 +7,11 @@ from pathlib import Path
 
 def main():
     """Run administrative tasks."""
+    # 프로젝트 루트(llm/ 패키지)를 Python 경로에 추가
+    project_root = str(Path(__file__).resolve().parent.parent)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
     # .env 파일 로드 (os.environ.get()이 .env 값을 읽을 수 있도록)
     try:
         from dotenv import load_dotenv

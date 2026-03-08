@@ -2,30 +2,41 @@ import { api } from "@/services/axios";
 import type { ChatSessionResponse, SendMessageResponse } from "./chatbot.types";
 
 const BASE_URL = "/api/v1/chat/sessions";
+const SESSION_TOKEN_HEADER = "X-Chat-Session-Token";
 
 export const chatbotApi = {
-    /** 세션 생성 (웰컴 메시지 포함) */
+    /** Create session (includes welcome message). */
     createSession: async (): Promise<ChatSessionResponse> => {
         const { data } = await api.post<ChatSessionResponse>(`${BASE_URL}/`);
         return data;
     },
 
-    /** 메시지 전송 및 응답 수신 */
+    /** Send a message and receive AI response. */
     sendMessage: async (
         sessionId: string,
-        content: string
+        content: string,
+        sessionToken?: string | null,
     ): Promise<SendMessageResponse> => {
         const { data } = await api.post<SendMessageResponse>(
             `${BASE_URL}/${sessionId}/send/`,
-            { content }
+            { content },
+            {
+                headers: sessionToken ? { [SESSION_TOKEN_HEADER]: sessionToken } : undefined,
+            },
         );
         return data;
     },
 
-    /** 세션 조회 (메시지 목록 포함) */
-    getSession: async (sessionId: string): Promise<ChatSessionResponse> => {
+    /** Get existing session (includes messages). */
+    getSession: async (
+        sessionId: string,
+        sessionToken?: string | null,
+    ): Promise<ChatSessionResponse> => {
         const { data } = await api.get<ChatSessionResponse>(
-            `${BASE_URL}/${sessionId}/`
+            `${BASE_URL}/${sessionId}/`,
+            {
+                headers: sessionToken ? { [SESSION_TOKEN_HEADER]: sessionToken } : undefined,
+            },
         );
         return data;
     },
