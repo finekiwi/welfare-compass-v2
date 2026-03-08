@@ -12,6 +12,7 @@
     response = run_agent(agent, "27살인데 월세 지원 받을 수 있어요?")
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,16 @@ from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTE
 # Agent 생성
 # ============================================================================
 
+def _read_timeout_seconds(default: int = 25) -> int:
+    raw = os.getenv("CHAT_LLM_TIMEOUT_SECONDS")
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 def create_agent(
     model: str = "gpt-4o-mini",
     temperature: float = 0,
@@ -36,6 +47,7 @@ def create_agent(
     max_iterations: int = 5,
     use_short_prompt: bool = False,
     policy_fetcher: PolicyFetcher | None = None,
+    timeout_seconds: int | None = None,
 ):
     """
     복지나침반 ReAct Agent 생성
@@ -52,9 +64,13 @@ def create_agent(
         CompiledGraph (LangGraph Agent)
     """
     # LLM 설정
+    if timeout_seconds is None:
+        timeout_seconds = _read_timeout_seconds()
+
     llm = ChatOpenAI(
         model=model,
         temperature=temperature,
+        timeout=timeout_seconds,
     )
     
     # 시스템 프롬프트 선택
@@ -86,6 +102,7 @@ async def create_agent_with_mcp(
     mcp_args: Optional[list[str]] = None,
     max_iterations: int = 5,
     policy_fetcher: PolicyFetcher | None = None,
+    timeout_seconds: int | None = None,
 ):
     """
     MCP 경유 모드 Agent 생성.
@@ -101,6 +118,9 @@ async def create_agent_with_mcp(
         raise ImportError(
             "langchain-mcp-adapters 미설치: `uv sync` 후 create_agent_with_mcp()를 사용하세요."
         ) from exc
+
+    if timeout_seconds is None:
+        timeout_seconds = _read_timeout_seconds()
 
     project_root = Path(__file__).resolve().parents[2]
     server_path = project_root / "llm" / "mcp" / "server.py"
@@ -130,6 +150,7 @@ async def create_agent_with_mcp(
     llm = ChatOpenAI(
         model=model,
         temperature=temperature,
+        timeout=timeout_seconds,
     )
     system_prompt = (
         ORCHESTRATOR_SYSTEM_PROMPT_SHORT

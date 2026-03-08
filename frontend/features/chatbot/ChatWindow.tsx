@@ -22,6 +22,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 
 export function ChatWindow() {
   const messages = useChatbotStore((s) => s.messages);
+  const isLoading = useChatbotStore((s) => s.isLoading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const profile = useProfileStore((s) => s.profile);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
@@ -91,6 +92,13 @@ export function ChatWindow() {
           {messages.map((m) => (
             <ChatMessageBubble key={m.id} message={m} />
           ))}
+          {isLoading && messages.length > 0 && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] rounded-2xl bg-gray-100 px-4 py-3 text-sm text-gray-600">
+                답변을 생성 중입니다...
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
 

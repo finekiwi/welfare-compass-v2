@@ -1,6 +1,5 @@
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 
 from django.core import signing
@@ -38,7 +37,6 @@ def _load_int_env(name: str, default: int) -> int:
 
 LLM_TIMEOUT_SECONDS = _load_int_env("CHAT_LLM_TIMEOUT_SECONDS", 25)
 LLM_MAX_RETRIES = max(0, _load_int_env("CHAT_LLM_MAX_RETRIES", 1))
-_AGENT_EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 
 @lru_cache(maxsize=1)
@@ -47,7 +45,33 @@ def _get_agent():
     from langgraph.checkpoint.memory import MemorySaver
     from llm.agents.agent import create_agent
 
-    return create_agent(checkpointer=MemorySaver())
+    return create_agent(
+        checkpointer=MemorySaver(),
+        policy_fetcher=_fetch_policies_for_agent,
+    )
+
+
+def _fetch_policies_for_agent(policy_ids: list[str] | None) -> list[dict]:
+    from policies.models import Policy
+
+    queryset = Policy.objects.all()
+    if policy_ids:
+        queryset = queryset.filter(policy_id__in=policy_ids)
+
+    return list(
+        queryset.values(
+            "policy_id",
+            "title",
+            "category",
+            "description",
+            "support_content",
+            "age_min",
+            "age_max",
+            "income_level",
+            "income_max",
+            "district",
+        )
+    )
 
 
 def _build_session_token(session_id: str) -> str:
@@ -75,37 +99,42 @@ def _is_valid_session_token(session_id: str, token: str | None) -> bool:
 def _run_agent_with_timeout_and_retry(user_content: str, thread_id: str) -> dict:
     from llm.agents.agent import run_agent
 
-    last_error: Exception | None = None
     max_attempts = LLM_MAX_RETRIES + 1
-
     for attempt in range(1, max_attempts + 1):
-        future = _AGENT_EXECUTOR.submit(run_agent, _get_agent(), user_content, thread_id)
-        try:
-            return future.result(timeout=LLM_TIMEOUT_SECONDS)
-        except FuturesTimeoutError as exc:
-            last_error = exc
+        result = run_agent(_get_agent(), user_content, thread_id)
+        error = result.get("error")
+        if not error:
+            return result
+
+        if _is_timeout_error(error) and attempt < max_attempts:
             logger.warning(
-                "LLM call timed out (session_id=%s, attempt=%s/%s, timeout=%ss)",
+                "LLM call timed out (session_id=%s, attempt=%s/%s, timeout=%ss). Retrying.",
                 thread_id,
                 attempt,
                 max_attempts,
                 LLM_TIMEOUT_SECONDS,
             )
-        except Exception as exc:
-            last_error = exc
-            logger.exception(
-                "LLM call failed with exception (session_id=%s, attempt=%s/%s)",
-                thread_id,
-                attempt,
-                max_attempts,
-            )
-        finally:
-            future.cancel()
+            continue
 
-    if isinstance(last_error, FuturesTimeoutError):
-        raise TimeoutError(f"LLM call timed out after {max_attempts} attempts")
+        return result
 
-    raise RuntimeError("LLM call failed after retries") from last_error
+    return {
+        "response": "",
+        "tool_calls": [],
+        "messages": [],
+        "error": "LLM call failed after retries",
+    }
+
+
+def _is_timeout_error(error_message: str | None) -> bool:
+    if not error_message:
+        return False
+    lowered = error_message.lower()
+    return (
+        "timed out" in lowered
+        or "timeout" in lowered
+        or "time out" in lowered
+    )
 
 
 class ChatSessionViewSet(viewsets.ModelViewSet):
@@ -115,13 +144,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         list: only authenticated user's sessions
-        retrieve/send: session lookup with explicit access validation
         """
-        if self.action in ["retrieve", "send"]:
-            if self.request.user.is_authenticated:
-                return ChatSession.objects.filter(user=self.request.user)
-            return ChatSession.objects.filter(user__isnull=True)
-
         if self.request.user.is_authenticated:
             return ChatSession.objects.filter(user=self.request.user)
         return ChatSession.objects.none()
@@ -220,15 +243,6 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 user_content,
                 thread_id=str(session.id),
             )
-        except TimeoutError:
-            logger.exception("LLM call timeout (session_id=%s)", session.id)
-            return Response(
-                {
-                    "error": "AI response timed out. Please retry.",
-                    "code": "LLM_TIMEOUT",
-                },
-                status=status.HTTP_504_GATEWAY_TIMEOUT,
-            )
         except Exception:
             logger.exception("LLM call failed (session_id=%s)", session.id)
             return Response(
@@ -237,6 +251,15 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             )
 
         if result.get("error"):
+            if _is_timeout_error(result["error"]):
+                logger.warning("LLM call timeout (session_id=%s): %s", session.id, result["error"])
+                return Response(
+                    {
+                        "error": "AI response timed out. Please retry.",
+                        "code": "LLM_TIMEOUT",
+                    },
+                    status=status.HTTP_504_GATEWAY_TIMEOUT,
+                )
             logger.error("LLM response error (session_id=%s): %s", session.id, result["error"])
             return Response(
                 {"error": result["error"], "code": "LLM_ERROR"},
