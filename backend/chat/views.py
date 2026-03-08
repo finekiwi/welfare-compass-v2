@@ -41,13 +41,50 @@ LLM_MAX_RETRIES = max(0, _load_int_env("CHAT_LLM_MAX_RETRIES", 1))
 _AGENT_EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 
+def _django_policy_fetcher(policy_ids: list[str] | None) -> list[dict]:
+    """Django DB에서 정책 데이터를 가져오는 fetcher (check_eligibility tool용)."""
+    from policies.models import Policy
+
+    qs = Policy.objects.all()
+    if policy_ids:
+        qs = qs.filter(policy_id__in=policy_ids)
+
+    results = []
+    for p in qs.iterator():
+        results.append({
+            "policy_id": p.policy_id,
+            "title": p.title,
+            "description": p.description or "",
+            "support_content": p.support_content or "",
+            "age_min": p.age_min,
+            "age_max": p.age_max,
+            "income_level": p.income_level or "",
+            "income_max": p.income_max,
+            "district": p.district or "",
+            "category": p.category or "",
+            "subcategory": p.subcategory or "",
+            "employment_status": p.employment_status or "",
+            "education_status": p.education_status or "",
+            "marriage_status": p.marriage_status or "",
+            "apply_start_date": str(p.apply_start_date) if p.apply_start_date else None,
+            "apply_end_date": str(p.apply_end_date) if p.apply_end_date else None,
+            "apply_url": p.apply_url or "",
+            "sbiz_cd": p.sbiz_cd or "",
+            "is_for_single_parent": p.is_for_single_parent,
+            "is_for_disabled": p.is_for_disabled,
+            "is_for_low_income": p.is_for_low_income,
+            "is_for_newlywed": p.is_for_newlywed,
+        })
+    return results
+
+
 @lru_cache(maxsize=1)
 def _get_agent():
     """Thread-safe lazy singleton per process."""
     from langgraph.checkpoint.memory import MemorySaver
     from llm.agents.agent import create_agent
 
-    return create_agent(checkpointer=MemorySaver())
+    return create_agent(checkpointer=MemorySaver(), policy_fetcher=_django_policy_fetcher)
 
 
 def _build_session_token(session_id: str) -> str:

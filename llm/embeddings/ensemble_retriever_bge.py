@@ -255,16 +255,24 @@ def ensemble_search_with_bge(
     if verbose:
         print(f"📦 리랭킹 대상: {len(candidates)}개")
 
-    # 5. 리랭킹 (config 기반)
+    # 5. 리랭킹 (config 기반, 실패 시 순위 그대로 폴백)
     if not candidates:
         final_docs = []
         rerank_latency = 0.0
     else:
-        final_docs, rerank_latency = rerank_documents_with_config(
-            query,
-            candidates,
-            top_k=top_k,
-        )
+        try:
+            final_docs, rerank_latency = rerank_documents_with_config(
+                query,
+                candidates,
+                top_k=top_k,
+            )
+        except Exception:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Reranker failed, falling back to ensemble order.", exc_info=True
+            )
+            final_docs = candidates[:top_k]
+            rerank_latency = 0.0
 
     total_latency = (time.perf_counter() - start_time) * 1000
     active_reranker = _get_reranker_type_name()
