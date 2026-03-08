@@ -65,6 +65,8 @@ def _fetch_policies_for_agent(policy_ids: list[str] | None) -> list[dict]:
             "category",
             "description",
             "support_content",
+            "apply_url",
+            "apply_end_date",
             "age_min",
             "age_max",
             "income_level",
@@ -117,13 +119,6 @@ def _run_agent_with_timeout_and_retry(user_content: str, thread_id: str) -> dict
             continue
 
         return result
-
-    return {
-        "response": "",
-        "tool_calls": [],
-        "messages": [],
-        "error": "LLM call failed after retries",
-    }
 
 
 def _is_timeout_error(error_message: str | None) -> bool:
