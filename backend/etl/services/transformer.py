@@ -188,7 +188,9 @@ class PolicyTransformer:
         is_for_single_parent = SBIZ_CODE_SINGLE_PARENT in sbiz_cd
         is_for_disabled = SBIZ_CODE_DISABLED in sbiz_cd
         is_for_low_income = SBIZ_CODE_LOW_INCOME in sbiz_cd
-        is_for_newlywed = _is_newlywed_exclusive(f"{raw_description} {raw_support}")
+        is_for_newlywed = _is_newlywed_exclusive(
+            f"{raw.get('plcyNm', '')} {raw_description} {raw_support}"
+        )
 
         # [BRAIN4-37 C02] 정책별 override 적용
         override_fields, _logs = apply_overrides(
