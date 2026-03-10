@@ -17,6 +17,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 
+from embeddings.policy_utils import create_policy_text, extract_metadata  # noqa: F401
+
 # ============================================================================
 # 경로 설정
 # ============================================================================
@@ -40,37 +42,6 @@ INCOME_CODES = {
 # ============================================================================
 # 헬퍼 함수
 # ============================================================================
-
-def create_policy_text(policy: dict) -> str:
-    """정책 데이터를 검색 최적화된 텍스트로 변환
-    
-    Args:
-        policy: 정책 데이터 dict
-        
-    Returns:
-        검색용 텍스트 문자열
-    """
-    parts = []
-    
-    # 정책명 (가중치 높이기 위해 2번 포함)
-    if policy.get('plcyNm'):
-        parts.append(f"정책명: {policy['plcyNm']}")
-        parts.append(policy['plcyNm'])
-    
-    # 정책 설명
-    if policy.get('plcyExplnCn'):
-        parts.append(f"설명: {policy['plcyExplnCn']}")
-    
-    # 지원 내용
-    if policy.get('plcySprtCn'):
-        parts.append(f"지원내용: {policy['plcySprtCn']}")
-    
-    # 대상
-    if policy.get('sprtTrgtCn'):
-        parts.append(f"대상: {policy['sprtTrgtCn']}")
-    
-    return " | ".join(parts)
-
 
 def is_policy_active(aply_ymd: str) -> bool:
     """정책이 현재 활성 상태인지 확인 (마감일 기준)
@@ -99,30 +70,6 @@ def is_policy_active(aply_ymd: str) -> bool:
         print(f"⚠️  날짜 파싱 실패: {aply_ymd} ({e})")
         return True  # 파싱 실패 시 포함
 
-
-def extract_metadata(policy: dict) -> Dict[str, Any]:
-    """정책 데이터에서 메타데이터 추출
-    
-    Args:
-        policy: 정책 원본 데이터
-        
-    Returns:
-        메타데이터 dict
-    """
-    return {
-        "plcyNo": policy.get('plcyNo', ''),
-        "plcyNm": policy.get('plcyNm', ''),
-        "minAge": int(policy.get('sprtTrgtMinAge') or 0),
-        "maxAge": int(policy.get('sprtTrgtMaxAge') or 99),
-        "region": policy.get('rgtrHghrkInstCdNm', ''),
-        "earnCndSeCd": policy.get('earnCndSeCd', ''),
-        "earnMaxAmt": policy.get('earnMaxAmt'),
-        "lclsfNm": policy.get('lclsfNm', ''),
-        "mclsfNm": policy.get('mclsfNm', ''),
-        "aplyYmd": policy.get('aplyYmd', ''),
-        "aplyUrlAddr": policy.get('aplyUrlAddr', ''),
-        "plcySprtCn": policy.get('plcySprtCn', '')[:200] if policy.get('plcySprtCn') else '',  # 요약용
-    }
 
 # ============================================================================
 # 메인 함수

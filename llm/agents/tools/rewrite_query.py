@@ -13,10 +13,15 @@ from llm.agents.prompts.rewrite_query import REWRITE_QUERY_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+_llm: ChatOpenAI | None = None
+
 
 def _get_llm() -> ChatOpenAI:
-    """LLM 인스턴스를 반환합니다."""
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    """LLM 인스턴스 반환 (첫 호출 시 초기화 후 캐싱)"""
+    global _llm
+    if _llm is None:
+        _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    return _llm
 
 
 def _rewrite_with_llm(query: str) -> str:
@@ -29,14 +34,12 @@ def _rewrite_with_llm(query: str) -> str:
     Returns:
         LLM이 반환한 원시 응답 (JSON 문자열 또는 텍스트)
     """
-    llm = _get_llm()
-
     messages = [
         ("system", REWRITE_QUERY_SYSTEM_PROMPT),
         ("user", query)
     ]
 
-    response = llm.invoke(messages)
+    response = _get_llm().invoke(messages)
     return response.content.strip()
 
 

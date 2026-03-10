@@ -13,6 +13,8 @@ from typing import List, Optional
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
+from embeddings.policy_utils import create_policy_text, extract_metadata
+
 # ============================================================================
 # 경로 설정
 # ============================================================================
@@ -49,47 +51,6 @@ def korean_preprocess(text: str) -> List[str]:
         return tokens if tokens else text.split()
     except Exception:
         return text.split()
-
-
-# ============================================================================
-# Document 생성 (vector_store.py와 동일한 구조)
-# ============================================================================
-def create_policy_text(policy: dict) -> str:
-    """정책 데이터를 검색 최적화된 텍스트로 변환"""
-    parts = []
-    
-    if policy.get('plcyNm'):
-        parts.append(f"정책명: {policy['plcyNm']}")
-        parts.append(policy['plcyNm'])
-    
-    if policy.get('plcyExplnCn'):
-        parts.append(f"설명: {policy['plcyExplnCn']}")
-    
-    if policy.get('plcySprtCn'):
-        parts.append(f"지원내용: {policy['plcySprtCn']}")
-    
-    if policy.get('sprtTrgtCn'):
-        parts.append(f"대상: {policy['sprtTrgtCn']}")
-    
-    return " | ".join(parts)
-
-
-def extract_metadata(policy: dict) -> dict:
-    """정책 데이터에서 메타데이터 추출"""
-    return {
-        "plcyNo": policy.get('plcyNo', ''),
-        "plcyNm": policy.get('plcyNm', ''),
-        "minAge": int(policy.get('sprtTrgtMinAge') or 0),
-        "maxAge": int(policy.get('sprtTrgtMaxAge') or 99),
-        "region": policy.get('rgtrHghrkInstCdNm', ''),
-        "earnCndSeCd": policy.get('earnCndSeCd', ''),
-        "earnMaxAmt": policy.get('earnMaxAmt'),
-        "lclsfNm": policy.get('lclsfNm', ''),
-        "mclsfNm": policy.get('mclsfNm', ''),
-        "aplyYmd": policy.get('aplyYmd', ''),
-        "aplyUrlAddr": policy.get('aplyUrlAddr', ''),
-        "plcySprtCn": policy.get('plcySprtCn', '')[:200] if policy.get('plcySprtCn') else '',
-    }
 
 
 def load_policy_documents() -> List[Document]:

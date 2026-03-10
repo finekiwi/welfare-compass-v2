@@ -37,8 +37,9 @@ from langchain_core.documents import Document
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from embeddings.vector_store import load_vector_db, is_policy_active
+from embeddings.vector_store import load_vector_db
 from embeddings.bm25_retriever import get_bm25_retriever
+from embeddings.retriever_utils import remove_duplicates, filter_expired
 from embeddings.config import RetrieverConfig
 from embeddings.rerankers.local_reranker import LocalReranker
 
@@ -107,30 +108,6 @@ def create_ensemble_retriever(
         retrievers=[get_bm25_retriever(k=k), get_dense_retriever(k=k)],
         weights=[bm25_weight, dense_weight]
     )
-
-
-# ============================================================================
-# 필터링
-# ============================================================================
-def remove_duplicates(documents: List[Document]) -> List[Document]:
-    """plcyNo 기준 중복 제거"""
-    seen = set()
-    unique = []
-    for doc in documents:
-        plcy_no = doc.metadata.get('plcyNo')
-        if plcy_no and plcy_no not in seen:
-            seen.add(plcy_no)
-            unique.append(doc)
-        elif not plcy_no:
-            unique.append(doc)
-    return unique
-
-
-def filter_expired(documents: List[Document], include_expired: bool = False) -> List[Document]:
-    """마감 정책 필터링"""
-    if include_expired:
-        return documents
-    return [doc for doc in documents if is_policy_active(doc.metadata.get('aplyYmd', ''))]
 
 
 # ============================================================================
