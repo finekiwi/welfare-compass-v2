@@ -13,10 +13,12 @@
 """
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Optional
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
@@ -26,6 +28,8 @@ from .schemas import ChatResponse
 from .tools import create_tools
 from .tools.check_eligibility import PolicyFetcher
 from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT_SHORT
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -302,13 +306,15 @@ def run_agent(
         }
         
     except Exception as e:
+        logger.exception("Agent 실행 중 오류 발생")
         error_msg = f"Agent 실행 중 오류 발생: {str(e)}"
-        
+
         if verbose:
             print(f"\n=== Error ===\n{error_msg}")
 
         fallback_text = "죄송해요, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요! 🙏"
-        
+
+
         return {
             "response": ChatResponse(
                 message=fallback_text,
@@ -340,6 +346,7 @@ def stream_agent(
         for chunk in agent.stream(inputs, config=config, stream_mode="values"):
             yield chunk
     except Exception as e:
+        logger.exception("스트리밍 중 오류 발생")
         yield {"error": f"스트리밍 중 오류: {str(e)}"}
 
 
