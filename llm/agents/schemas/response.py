@@ -109,6 +109,7 @@ class PolicyResult:
             reasons = []
 
         return cls(
+            # TODO: LLM이 plcy_no를 누락하면 빈 문자열이 됨 — 의도치 않은 빈 정책 카드 방지 로직 추가 필요
             plcy_no=str(_get_first(data, "plcy_no", "policy_id") or ""),
             plcy_nm=str(_get_first(data, "plcy_nm", "title") or ""),
             category=str(_get_first(data, "category", "category_name") or ""),
@@ -127,6 +128,7 @@ class ChatResponse:
     message: str
     policies: list[PolicyResult] = field(default_factory=list)
     follow_up: str | None = None
+    # SSE 스트리밍 시 단계 표시용 (현재 미사용, 향후 SSE PR에서 활성화 예정)
     stage: str = "complete"
 
     def to_dict(self) -> dict[str, Any]:
@@ -179,6 +181,7 @@ def policy_info_to_result(
     detail_url = _normalize_optional_text(_get_first(policy, "detail_url", "link"))
 
     return PolicyResult(
+        # TODO: policy에 plcy_no/policy_id가 없으면 빈 문자열이 됨 — 의도치 않은 빈 정책 카드 방지 로직 추가 필요
         plcy_no=str(_get_first(policy, "plcy_no", "policy_id") or ""),
         plcy_nm=str(_get_first(policy, "plcy_nm", "title") or ""),
         category=str(_get_first(policy, "category", "category_name") or ""),
