@@ -19,7 +19,7 @@ _llm: ChatOpenAI | None = None
 def _get_llm() -> ChatOpenAI:
     """LLM 인스턴스 반환 (첫 호출 시 초기화 후 캐싱)"""
     global _llm
-    if _llm is None:
+    if _llm is None:  # benign race: ChatOpenAI is stateless
         _llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
     return _llm
 
