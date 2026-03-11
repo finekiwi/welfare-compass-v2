@@ -1,0 +1,13 @@
+# GPU 환경 전용 override
+# 사용법: docker compose -f docker-compose.yaml -f docker-compose.gpu.yml up
+services:
+  mcp:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all

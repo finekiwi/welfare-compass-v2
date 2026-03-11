@@ -12,3 +12,4 @@ requests>=2.31.0
 cryptography>=41.0.0
 django-axes>=6.0.0
 Pillow>=12.1.1
+gunicorn>=22.0.0

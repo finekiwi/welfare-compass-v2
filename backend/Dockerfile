@@ -10,15 +10,24 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libpq-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Python 의존성
+# Python 의존성 (uv 사용)
+RUN pip install --no-cache-dir uv
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+RUN uv pip install --system --no-cache -r requirements.txt
+
+# 비루트 사용자 생성
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser && \
+    mkdir -p /app/backend/staticfiles && \
+    chown -R appuser:appuser /app
 
 # 소스 복사
-COPY backend/ /app/backend/
+COPY --chown=appuser:appuser backend/ /app/backend/
 
 # entrypoint
 RUN chmod +x /app/backend/entrypoint.sh
+
+USER appuser
 
 EXPOSE 8000
 

@@ -11,3 +11,8 @@ infra/
 test/
 *.md
 !README.md
+.env*
+!.env.docker.example
+!backend/.env.example
+data/
+.omc/

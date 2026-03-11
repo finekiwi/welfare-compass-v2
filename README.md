@@ -268,15 +268,18 @@ Backend와 DB 실행:
 docker compose up --build db backend
 ```
 
+> **기존 볼륨이 남아 있는 경우** (DB 유저 mismatch 등):
+> `docker compose down -v` 로 볼륨 초기화 후 다시 `up -d`
+
 접속 주소:
 
 - Backend API: `http://localhost:8000`
 - DB: `localhost:5432`
 
-> `frontend` 서비스는 compose에 정의되어 있지만 현재 저장소에는 `frontend/Dockerfile`이 없습니다.  
+> `frontend` 서비스는 compose에 정의되어 있지만 현재 저장소에는 `frontend/Dockerfile`이 없습니다.
 > 따라서 Frontend는 아래의 로컬 실행 방식을 기준으로 안내합니다.
 
-> `mcp` 서비스는 compose에 정의되어 있지만 GPU reservation 설정이 포함되어 있습니다.  
+> `mcp` 서비스는 compose에 정의되어 있지만 GPU reservation 설정이 포함되어 있습니다.
 > 비-NVIDIA 환경에서는 별도 조정이 필요할 수 있으므로, 기본 가이드는 Backend 우선 실행 기준으로 정리합니다.
 
 ### 9-3. Frontend 로컬 실행
@@ -292,7 +295,7 @@ npm run dev
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:8000`
 
-프론트엔드는 `NEXT_PUBLIC_API_BASE_URL`이 없으면 기본값으로 `http://localhost:8000`을 사용합니다.  
+프론트엔드는 `NEXT_PUBLIC_API_BASE_URL`이 없으면 기본값으로 `http://localhost:8000`을 사용합니다.
 Google 로그인이나 Kakao Map 기능까지 함께 쓰려면 `frontend/.env.local`에 아래 환경변수를 설정하세요.
 
 - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
@@ -301,7 +304,7 @@ Google 로그인이나 Kakao Map 기능까지 함께 쓰려면 `frontend/.env.lo
 
 ### 9-4. Backend 로컬 실행
 
-로컬 Postgres를 직접 쓰거나, DB만 Docker로 띄운 뒤 Backend를 로컬에서 실행해도 됩니다.  
+로컬 Postgres를 직접 쓰거나, DB만 Docker로 띄운 뒤 Backend를 로컬에서 실행해도 됩니다.
 DB만 Docker로 띄우려면:
 
 ```bash
