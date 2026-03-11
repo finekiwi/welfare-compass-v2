@@ -755,3 +755,36 @@ class TestGetRejectionReasons(SimpleTestCase):
         policy = DummyPolicy(age_min=19, age_max=39)
         self.assertTrue(is_policy_matching_user(policy, {'age': 25}))
         self.assertFalse(is_policy_matching_user(policy, {'age': 45}))
+
+
+# =============================================================================
+# calendar() 입력 검증 테스트
+# =============================================================================
+
+
+class CalendarInputValidationTests(TestCase):
+    """calendar API 입력 검증 테스트"""
+
+    def test_default_params_returns_200(self):
+        response = self.client.get('/api/policies/calendar/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_invalid_year_returns_400(self):
+        response = self.client.get('/api/policies/calendar/', {'year': 'abc'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_month_13_returns_400(self):
+        response = self.client.get('/api/policies/calendar/', {'month': '13'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_month_0_returns_400(self):
+        response = self.client.get('/api/policies/calendar/', {'month': '0'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_year_1999_returns_400(self):
+        response = self.client.get('/api/policies/calendar/', {'year': '1999'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_year_2101_returns_400(self):
+        response = self.client.get('/api/policies/calendar/', {'year': '2101'})
+        self.assertEqual(response.status_code, 400)

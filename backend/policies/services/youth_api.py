@@ -205,11 +205,8 @@ def get_youth_centers(page=1, size=10):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
-    # print(f"DEBUG: Calling Youth API: {url} with params {params}")
     try:
         response = requests.get(url, params=params, headers=headers, timeout=5)
-        # print(f"DEBUG: Response Status: {response.status_code}")
-        # print(f"DEBUG: Response Text: {response.text[:500]}") # 처음 500자만 출력
         response.raise_for_status()
         
         # JSON 시도

@@ -191,20 +191,19 @@ class MapPOISerializer(serializers.ModelSerializer):
             'original_data'
         ]
 
-    def get_cot_conts_id(self, obj):
+    def _get_original_field(self, obj, key):
         if isinstance(obj.original_data, dict):
-            return obj.original_data.get('COT_CONTS_ID', '')
+            return obj.original_data.get(key, '')
         return ''
+
+    def get_cot_conts_id(self, obj):
+        return self._get_original_field(obj, 'COT_CONTS_ID')
 
     def get_cot_theme_id(self, obj):
-        if isinstance(obj.original_data, dict):
-            return obj.original_data.get('COT_THEME_ID', '')
-        return ''
+        return self._get_original_field(obj, 'COT_THEME_ID')
 
     def get_cot_theme_sub_id(self, obj):
-        if isinstance(obj.original_data, dict):
-            return obj.original_data.get('COT_THEME_SUB_ID', '')
-        return ''
+        return self._get_original_field(obj, 'COT_THEME_SUB_ID')
 
     def get_theme_icon_url(self, obj):
         try:

@@ -24,9 +24,10 @@ from accounts.views import GoogleLogin, FindUsernameView, PasswordResetConfirmRe
 
 
 def health_check(request):
-    """Docker healthcheck 용 엔드포인트. DB 연결 확인 포함."""
+    """Docker healthcheck 용 엔드포인트. DB round-trip 확인 포함."""
     try:
-        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
         return JsonResponse({"status": "ok"})
     except Exception as e:
         return JsonResponse({"status": "error", "detail": str(e)}, status=503)
