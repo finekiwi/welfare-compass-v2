@@ -28,6 +28,7 @@ from .schemas import ChatResponse
 from .tools import create_tools
 from .tools.check_eligibility import PolicyFetcher
 from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT_SHORT
+from ..services import get_langfuse_handler
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,10 @@ def run_agent(
         "configurable": {"thread_id": thread_id},
         "recursion_limit": recursion_limit,
     }
-    
+    langfuse_handler = get_langfuse_handler(session_id=thread_id)
+    if langfuse_handler is not None:
+        config["callbacks"] = [langfuse_handler]
+
     # 입력 메시지
     inputs = {"messages": [HumanMessage(content=message)]}
     
@@ -340,8 +344,11 @@ def stream_agent(
         각 스텝의 결과 dict
     """
     config = {"configurable": {"thread_id": thread_id}}
+    langfuse_handler = get_langfuse_handler(session_id=thread_id)
+    if langfuse_handler is not None:
+        config["callbacks"] = [langfuse_handler]
     inputs = {"messages": [HumanMessage(content=message)]}
-    
+
     try:
         for chunk in agent.stream(inputs, config=config, stream_mode="values"):
             yield chunk
