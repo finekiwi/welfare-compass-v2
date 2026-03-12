@@ -28,6 +28,7 @@ from .schemas import ChatResponse
 from .tools import create_tools
 from .tools.check_eligibility import PolicyFetcher
 from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT_SHORT
+from ..services import get_langfuse_handler, langfuse_session
 
 logger = logging.getLogger(__name__)
 
@@ -265,14 +266,18 @@ def run_agent(
         "configurable": {"thread_id": thread_id},
         "recursion_limit": recursion_limit,
     }
-    
+    langfuse_handler = get_langfuse_handler()
+    if langfuse_handler is not None:
+        config.setdefault("callbacks", []).append(langfuse_handler)
+
     # 입력 메시지
     inputs = {"messages": [HumanMessage(content=message)]}
     
     try:
         # 실행
-        result = agent.invoke(inputs, config=config)
-        
+        with langfuse_session(session_id=thread_id):
+            result = agent.invoke(inputs, config=config)
+
         # 결과 파싱
         messages = result.get("messages", [])
         raw_text = _extract_final_ai_text(messages)
@@ -339,15 +344,24 @@ def stream_agent(
     Yields:
         각 스텝의 결과 dict
     """
-    config = {"configurable": {"thread_id": thread_id}}
+    max_iterations = getattr(agent, "_max_iterations", 5)
+    recursion_limit = max_iterations * 2 + 1
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": recursion_limit,
+    }
+    langfuse_handler = get_langfuse_handler()
+    if langfuse_handler is not None:
+        config.setdefault("callbacks", []).append(langfuse_handler)
     inputs = {"messages": [HumanMessage(content=message)]}
-    
-    try:
-        for chunk in agent.stream(inputs, config=config, stream_mode="values"):
-            yield chunk
-    except Exception as e:
-        logger.exception("스트리밍 중 오류 발생")
-        yield {"error": f"스트리밍 중 오류: {str(e)}"}
+
+    with langfuse_session(session_id=thread_id):
+        try:
+            for chunk in agent.stream(inputs, config=config, stream_mode="values"):
+                yield chunk
+        except Exception as e:
+            logger.exception("스트리밍 중 오류 발생")
+            yield {"error": f"스트리밍 중 오류: {str(e)}"}
 
 
 # ============================================================================

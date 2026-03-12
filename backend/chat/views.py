@@ -261,7 +261,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        assistant_content = result["response"]
+        assistant_content = result["response"].message
         metadata = {"tool_calls": result.get("tool_calls", [])}
 
         with transaction.atomic():
