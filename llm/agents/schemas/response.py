@@ -203,19 +203,20 @@ def policy_info_to_result(
 def build_chat_response(
     message: str,
     policies: list[dict[str, Any]],
-    eligibility_results: list[dict[str, Any]],
+    eligibility_results: dict[str, dict[str, Any]],
     follow_up: str | None = None,
     *,
     today: date | None = None,
 ) -> ChatResponse:
-    if len(policies) != len(eligibility_results):
-        raise ValueError("policies and eligibility_results must have the same length")
-
     return ChatResponse(
         message=message,
         policies=[
-            policy_info_to_result(policy, eligibility_result, today=today)
-            for policy, eligibility_result in zip(policies, eligibility_results)
+            policy_info_to_result(
+                policy,
+                eligibility_results.get(str(_get_first(policy, "plcy_no", "policy_id") or ""), {}),
+                today=today,
+            )
+            for policy in policies
         ],
         follow_up=_normalize_optional_text(follow_up),
         stage="complete",

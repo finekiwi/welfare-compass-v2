@@ -167,7 +167,7 @@ class TestPolicyInfoToResult:
 
 
 class TestBuildChatResponse:
-    def test_builds_response_with_index_matching(self):
+    def test_builds_response_with_policy_id_mapping(self):
         response = build_chat_response(
             message="추천 결과예요.",
             policies=[
@@ -184,10 +184,10 @@ class TestBuildChatResponse:
                     "summary": "두 번째 정책",
                 },
             ],
-            eligibility_results=[
-                {"is_eligible": True, "reasons": []},
-                {"is_eligible": None, "reasons": ["소득 정보 없음"]},
-            ],
+            eligibility_results={
+                "P1": {"is_eligible": True, "reasons": []},
+                "P2": {"is_eligible": None, "reasons": ["소득 정보 없음"]},
+            },
             follow_up="원하시면 더 추려드릴게요.",
             today=date(2026, 3, 8),
         )
@@ -201,21 +201,13 @@ class TestBuildChatResponse:
         response = build_chat_response(
             message="검색 결과가 없어요.",
             policies=[],
-            eligibility_results=[],
+            eligibility_results={},
             today=date(2026, 3, 8),
         )
 
         assert response.message == "검색 결과가 없어요."
         assert response.policies == []
         assert response.follow_up is None
-
-    def test_raises_on_length_mismatch(self):
-        with pytest.raises(ValueError):
-            build_chat_response(
-                message="길이 불일치",
-                policies=[{"policy_id": "P1"}],
-                eligibility_results=[],
-            )
 
 
 class TestDdayBehavior:
@@ -266,24 +258,22 @@ class TestDdayBehavior:
         assert result.dday == -7
 
 
-class TestBuildChatResponseOrderSafety:
-    """check_eligibility가 적격 정책을 재정렬한 후 build_chat_response를 호출할 때
-    policies와 eligibility_results의 순서가 맞지 않으면 잘못된 매핑이 발생한다.
-    이 테스트는 그 위험을 명시적으로 문서화하고, 향후 policy_id 기반 매핑으로
-    리팩토링 시 회귀를 방지한다."""
+class TestBuildChatResponsePolicyIdMapping:
+    """build_chat_response는 policy_id 기반 dict 매핑을 사용하므로
+    check_eligibility가 적격 정책을 재정렬해도 매핑이 뒤바뀌지 않는다."""
 
-    def test_order_dependent_mapping_produces_correct_result_when_aligned(self):
-        """policies와 eligibility_results의 순서가 일치할 때 정확히 매핑된다."""
+    def test_correct_mapping_by_policy_id(self):
+        """policy_id로 매핑하므로 policies 순서와 무관하게 올바른 자격판정이 붙는다."""
         response = build_chat_response(
             message="결과입니다.",
             policies=[
                 {"policy_id": "A", "title": "정책A", "category": "주거"},
                 {"policy_id": "B", "title": "정책B", "category": "취업"},
             ],
-            eligibility_results=[
-                {"is_eligible": True, "reasons": []},
-                {"is_eligible": False, "reasons": ["나이 미충족"]},
-            ],
+            eligibility_results={
+                "A": {"is_eligible": True, "reasons": []},
+                "B": {"is_eligible": False, "reasons": ["나이 미충족"]},
+            },
             today=date(2026, 3, 8),
         )
 
@@ -292,26 +282,22 @@ class TestBuildChatResponseOrderSafety:
         assert response.policies[1].plcy_no == "B"
         assert response.policies[1].eligibility.value == "ineligible"
 
-    def test_caller_must_keep_policies_and_results_in_sync(self):
-        """check_eligibility가 적격 정책을 재정렬할 경우, 이 함수를 호출하는 쪽에서
-        policies와 eligibility_results의 순서를 동기화해야 한다.
-        현재 zip 기반 구현은 순서가 어긋나면 잘못된 매핑을 만든다.
-        TODO: policy_id 기준 매핑으로 리팩토링하면 이 순서 의존성이 제거된다."""
-        # 순서가 일치하는 경우만 정상 동작을 보장한다
+    def test_reordered_policies_still_map_correctly(self):
+        """check_eligibility가 재정렬해도 policy_id 기준으로 매핑되므로 결과가 뒤바뀌지 않는다."""
         response = build_chat_response(
-            message="순서 동기화된 결과.",
+            message="재정렬된 결과.",
             policies=[
-                {"policy_id": "A", "title": "정책A"},
                 {"policy_id": "B", "title": "정책B"},
+                {"policy_id": "A", "title": "정책A"},
             ],
-            eligibility_results=[
-                {"is_eligible": True, "reasons": []},
-                {"is_eligible": False, "reasons": ["나이 미충족"]},
-            ],
+            eligibility_results={
+                "A": {"is_eligible": True, "reasons": []},
+                "B": {"is_eligible": False, "reasons": ["나이 미충족"]},
+            },
             today=date(2026, 3, 8),
         )
 
-        assert response.policies[0].plcy_no == "A"
-        assert response.policies[0].eligibility.value == "eligible"
-        assert response.policies[1].plcy_no == "B"
-        assert response.policies[1].eligibility.value == "ineligible"
+        assert response.policies[0].plcy_no == "B"
+        assert response.policies[0].eligibility.value == "ineligible"
+        assert response.policies[1].plcy_no == "A"
+        assert response.policies[1].eligibility.value == "eligible"
