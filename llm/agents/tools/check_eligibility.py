@@ -256,12 +256,15 @@ def _rank_eligible_policies(
     user_housing = _normalize_text(user_info.get("housing_type")).lower()
     user_employment = _normalize_text(user_info.get("employment_status")).lower()
 
+    # extract_info canonical value 기준: {"재직", "자영업", "무직", "구직중", "학생", "창업준비", "프리랜서"}
     employment_keywords = {
         "구직중": ["취업", "구직", "취준", "일자리"],
         "재직": ["재직", "직장인", "근로"],
-        "창업": ["창업", "사업"],
+        "자영업": ["자영업", "소상공인", "가게"],
+        "창업준비": ["창업", "사업", "스타트업"],
         "학생": ["대학", "학생", "학자금"],
         "무직": ["취업", "구직", "일자리"],
+        "프리랜서": ["프리랜서", "계약직", "알바"],
     }
     core_keywords = ["지원", "혜택", "무료", "할인", "교육", "상담"]
     money_amount_keywords = ["만원", "백만", "천만", "억원"]

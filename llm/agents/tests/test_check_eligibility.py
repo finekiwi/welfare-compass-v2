@@ -494,6 +494,53 @@ class TestRankPolicies:
 
         assert [row["policy_id"] for row in ranked] == ["JOB", "CULTURE"]
 
+    def test_employment_status_changup_jun_bi_matches_canonical(self):
+        """창업준비 canonical value가 창업 관련 정책에 가중치를 부여한다."""
+        ranked = _rank(
+            [
+                _eligible_row(policy_id="CULTURE", title="문화 지원 정책"),
+                _eligible_row(policy_id="BIZ", title="창업 지원 정책"),
+            ],
+            {"employment_status": "창업준비"},
+        )
+
+        assert [row["policy_id"] for row in ranked] == ["BIZ", "CULTURE"]
+
+    def test_employment_status_jayeongup_matches_canonical(self):
+        """자영업 canonical value가 자영업 관련 정책에 가중치를 부여한다."""
+        ranked = _rank(
+            [
+                _eligible_row(policy_id="CULTURE", title="문화 지원 정책"),
+                _eligible_row(policy_id="SHOP", title="소상공인 지원 정책"),
+            ],
+            {"employment_status": "자영업"},
+        )
+
+        assert [row["policy_id"] for row in ranked] == ["SHOP", "CULTURE"]
+
+    def test_employment_status_freelancer_matches_canonical(self):
+        """프리랜서 canonical value가 프리랜서 관련 정책에 가중치를 부여한다."""
+        ranked = _rank(
+            [
+                _eligible_row(policy_id="CULTURE", title="문화 지원 정책"),
+                _eligible_row(policy_id="FREE", title="프리랜서 지원 정책"),
+            ],
+            {"employment_status": "프리랜서"},
+        )
+
+        assert [row["policy_id"] for row in ranked] == ["FREE", "CULTURE"]
+
+    def test_employment_status_changup_dead_branch_removed(self):
+        """'창업' key는 extract_info에서 나오지 않는 값이라 테이블에서 제거됐고,
+        '창업준비'가 그 역할을 대신한다."""
+        from llm.agents.tools.check_eligibility import _rank_eligible_policies
+        import inspect
+
+        source = inspect.getsource(_rank_eligible_policies)
+        assert '"창업준비"' in source, "창업준비 canonical key가 존재해야 합니다"
+        assert '"자영업"' in source, "자영업 canonical key가 존재해야 합니다"
+        assert '"프리랜서"' in source, "프리랜서 canonical key가 존재해야 합니다"
+
     def test_monthly_rent_housing_bonus_applied(self):
         ranked = _rank(
             [

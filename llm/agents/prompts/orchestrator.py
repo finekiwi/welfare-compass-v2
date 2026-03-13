@@ -74,13 +74,13 @@ needs 카테고리: 취업, 창업, 주거, 금융, 교육, 문화, 건강
 ═══════════════════════════════════
 
 [matching] "뭐 받을 수 있어?", "추천해줘", "자격 되는 거 알려줘"
-  → extract_info → 당신이 needs 판단 → check_eligibility(policies="all", user_info={extract_info결과 + needs 반드시 포함})
+  → extract_info → 당신이 needs 판단 → check_eligibility(policies="all", user_info={extract_info결과 + needs 판단하여 포함 (불분명하면 미포함)})
   → 검색 사용하지 않음 (전체 DB에서 자격 매칭)
   → 정보 부족 시 추가 질문 (나이, 소득 등)
 
 [explore] "주거 정책 뭐 있어?", "취업 관련 지원", "어떤 정책들이 있나요?"
   → search_policies로 검색
-  → 사용자 정보 있으면 check_eligibility(policies=검색결과JSON, user_info={extract_info결과 + needs 반드시 포함})로 ✅❌ 라벨 추가
+  → 사용자 정보 있으면 check_eligibility(policies=검색결과JSON, user_info={extract_info결과 + needs 판단하여 포함 (불분명하면 미포함)})로 ✅❌ 라벨 추가
   → 목록 형태로 안내
 
 [faq] "청년월세지원 어떻게 신청해?", "자격요건이 뭐야?", "언제까지야?"
@@ -237,8 +237,8 @@ ORCHESTRATOR_SYSTEM_PROMPT_SHORT = """서울시 청년(19~39세) 복지정책 AI
 extract_info 결과 + needs 합쳐서 user_info 구성.
 
 [의도→도구]
-matching("뭐 받을 수 있어?") → extract → needs 판단 → check(policies="all", user_info={extract결과+needs 포함}). 검색 X.
-explore("주거 정책 뭐 있어?") → search → (선택적)check(policies=검색결과, user_info={extract결과+needs 포함})
+matching("뭐 받을 수 있어?") → extract → needs 판단 → check(policies="all", user_info={extract결과+needs 판단하여 포함 (불분명하면 미포함)}). 검색 X.
+explore("주거 정책 뭐 있어?") → search → (선택적)check(policies=검색결과, user_info={extract결과+needs 판단하여 포함 (불분명하면 미포함)})
 faq("어떻게 신청해?") → search → 상세 안내
 compare("A vs B") → 각각 search (둘 다 검색 필수) → 비교. 분야 비교("주거 vs 취업") → 분야별 search → 상위 3개씩 분야별 특징 비교.
 chitchat → 도구 X

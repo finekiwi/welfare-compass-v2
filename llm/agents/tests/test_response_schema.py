@@ -264,3 +264,55 @@ class TestDdayBehavior:
         )
 
         assert result.dday == -7
+
+
+class TestBuildChatResponseOrderSafety:
+    """check_eligibility가 적격 정책을 재정렬한 후 build_chat_response를 호출할 때
+    policies와 eligibility_results의 순서가 맞지 않으면 잘못된 매핑이 발생한다.
+    이 테스트는 그 위험을 명시적으로 문서화하고, 향후 policy_id 기반 매핑으로
+    리팩토링 시 회귀를 방지한다."""
+
+    def test_order_dependent_mapping_produces_correct_result_when_aligned(self):
+        """policies와 eligibility_results의 순서가 일치할 때 정확히 매핑된다."""
+        response = build_chat_response(
+            message="결과입니다.",
+            policies=[
+                {"policy_id": "A", "title": "정책A", "category": "주거"},
+                {"policy_id": "B", "title": "정책B", "category": "취업"},
+            ],
+            eligibility_results=[
+                {"is_eligible": True, "reasons": []},
+                {"is_eligible": False, "reasons": ["나이 미충족"]},
+            ],
+            today=date(2026, 3, 8),
+        )
+
+        assert response.policies[0].plcy_no == "A"
+        assert response.policies[0].eligibility.value == "eligible"
+        assert response.policies[1].plcy_no == "B"
+        assert response.policies[1].eligibility.value == "ineligible"
+
+    def test_order_mismatch_causes_wrong_mapping(self):
+        """policies와 eligibility_results 순서가 어긋나면 매핑이 뒤바뀐다.
+        check_eligibility가 적격 정책을 재정렬한 뒤 이 함수를 호출할 경우
+        반드시 두 리스트의 순서를 동기화해야 함을 보여준다.
+        TODO: 향후 policy_id 기준 매핑으로 리팩토링하면 이 위험이 제거된다."""
+        response = build_chat_response(
+            message="순서 뒤바뀐 결과.",
+            policies=[
+                {"policy_id": "A", "title": "정책A"},
+                {"policy_id": "B", "title": "정책B"},
+            ],
+            eligibility_results=[
+                # 의도적으로 B의 결과를 A 위치에, A의 결과를 B 위치에 넣음
+                {"is_eligible": False, "reasons": ["나이 미충족"]},
+                {"is_eligible": True, "reasons": []},
+            ],
+            today=date(2026, 3, 8),
+        )
+
+        # A에 B의 자격판정 결과가 붙어버린다 — 순서 의존성의 위험을 명시적으로 확인
+        assert response.policies[0].plcy_no == "A"
+        assert response.policies[0].eligibility.value == "ineligible"  # 실제로는 A가 eligible이어야 함
+        assert response.policies[1].plcy_no == "B"
+        assert response.policies[1].eligibility.value == "eligible"  # 실제로는 B가 ineligible이어야 함
