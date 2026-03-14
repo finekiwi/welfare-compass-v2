@@ -26,8 +26,8 @@ function GoogleLoginButtonContent() {
                 console.log("Google Code:", code); // 디버깅용
                 await loginWithGoogle(code);
 
-                // 로그인 성공 시 상태 업데이트
-                login();
+                // 로그인 성공 시 상태 업데이트 (await 필수 — 쿠키 검증 후 이동)
+                await login();
 
                 // 메인 페이지로 이동
                 router.push("/");
