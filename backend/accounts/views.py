@@ -150,24 +150,62 @@ class AxesLockedLoginView(DjRestAuthLoginView):
 
         return response
 
+class LeewayGoogleOAuth2Adapter(GoogleOAuth2Adapter):
+    """GoogleOAuth2Adapter + clock skew tolerance (leeway).
+
+    WSL2 등 가상 환경에서 호스트-게스트 간 시계 미세 차이로
+    ImmatureSignatureError(iat가 미래)가 간헐적으로 발생하는 것을 방지합니다.
+    """
+
+    def _decode_id_token(self, app, id_token):
+        import jwt as pyjwt
+        from allauth.socialaccount.providers.google.views import (
+            CERTS_URL, ID_TOKEN_ISSUER,
+        )
+        from allauth.socialaccount.internal import jwtkit
+        from allauth.socialaccount.providers.oauth2.client import OAuth2Error
+
+        verify_signature = not self.did_fetch_access_token
+        try:
+            if verify_signature:
+                alg, key = jwtkit.fetch_key(
+                    id_token, CERTS_URL, jwtkit.lookup_kid_pem_x509_certificate,
+                )
+                algorithms = [alg]
+            else:
+                key = ""
+                algorithms = None
+
+            data = pyjwt.decode(
+                id_token,
+                key=key,
+                options={
+                    "verify_signature": verify_signature,
+                    "verify_iss": True,
+                    "verify_aud": True,
+                    "verify_exp": True,
+                },
+                issuer=ID_TOKEN_ISSUER,
+                audience=app.client_id,
+                algorithms=algorithms,
+                leeway=10,  # 10초 clock skew 허용
+            )
+            jwtkit.verify_jti(data)
+            return data
+        except pyjwt.PyJWTError as e:
+            raise OAuth2Error("Invalid id_token") from e
+
+
 class GoogleLogin(SocialLoginView):
     """
     구글 로그인 API
-    
+
     프론트엔드에서 구글 로그인 후 받은 'code'를 이 API로 보내면,
     백엔드가 구글과 통신하여 제 3자 인증을 완료하고 JWT 토큰을 발급합니다.
     """
-    adapter_class = GoogleOAuth2Adapter
-    callback_url = "postmessage" # 프론트엔드 Popup Flow(postmessage) 사용 시 필수
+    adapter_class = LeewayGoogleOAuth2Adapter
+    callback_url = "postmessage"
     client_class = OAuth2Client
-
-    def post(self, request, *args, **kwargs):
-        print("DEBUG: GoogleLogin POST received")
-        try:
-            return super().post(request, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"Google Login Exception: {e}", exc_info=True)
-            return Response({"error": "구글 로그인 처리에 실패했습니다. 잠시 후 다시 시도해주세요."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # class SignupView(generics.CreateAPIView):
