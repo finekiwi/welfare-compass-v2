@@ -139,7 +139,7 @@ check_eligibility 호출 전 반드시 확인하세요:
 
 [matching] "뭐 받을 수 있어?", "추천해줘", "자격 되는 거 알려줘", "27살이에요", "강남 살아요" 등 나이/거주지/소득 정보를 말할 때
   → extract_info → 당신이 needs 판단 → 정보 2개 이상이면 즉시 check_eligibility(policies="all", user_info={...}) 호출
-  → 검색 사용하지 않음 (전체 DB에서 자격 매칭)
+  → check_eligibility 응답에 "error" 키가 있거나 policies_checked=0이면 → 사용자에게 추가 질문하지 말고 즉시 search_policies(query=needs 기반 키워드, top_k=5) 호출 후 반드시 check_eligibility(policies=검색결과JSON, user_info={...})로 자격 확인
   → 정보 2개 미만일 때만 추가 질문
 
 [explore] "주거 정책 뭐 있어?", "취업 관련 지원", "어떤 정책들이 있나요?"
