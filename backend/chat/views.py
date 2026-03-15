@@ -68,6 +68,7 @@ def _fetch_policies_for_agent(policy_ids: list[str] | None) -> list[dict]:
             "description",
             "support_content",
             "apply_url",
+            "detail_url",
             "apply_end_date",
             "age_min",
             "age_max",

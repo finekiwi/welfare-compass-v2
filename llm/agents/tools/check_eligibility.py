@@ -481,6 +481,7 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 "details": details,
                 # 응답 구조화(PolicyResult 조립)에 필요한 추가 필드
                 "apply_url": policy.get("apply_url") or "",
+                "detail_url": policy.get("detail_url") or "",
                 "category": policy.get("category") or policy.get("category_name") or "",
                 "summary": policy.get("support_content") or policy.get("description") or "",
                 "apply_end_date": _apply_end_date,

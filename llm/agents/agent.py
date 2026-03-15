@@ -294,6 +294,7 @@ def _extract_policies_from_messages(
                     ),
                     "deadline": item.get("apply_end_date"),
                     "apply_url": item.get("apply_url"),
+                    "detail_url": item.get("detail_url"),
                 }
                 try:
                     policies.append(PolicyResult.from_dict(mapped, today=today))
