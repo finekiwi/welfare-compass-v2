@@ -59,6 +59,7 @@ class Policy(models.Model):
     apply_end_date = models.DateField(null=True, blank=True)  # [RENAME] aply_end_dt → apply_end_date
     apply_method = models.TextField(blank=True)  # [RENAME] plcy_aply_mthd_cn → apply_method
     apply_url = models.CharField(max_length=500, blank=True)  # [RENAME] aply_url_addr → apply_url
+    detail_url = models.URLField(blank=True, help_text="상세 정보 URL")
 
     # 사업기간
     business_start_date = models.DateField(  # [RENAME] biz_prd_bgng_ymd → business_start_date
