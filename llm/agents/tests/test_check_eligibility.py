@@ -84,7 +84,6 @@ def _eligible_row(**overrides):
         "apply_end_date": None,
         "is_eligible": True,
         "reasons": [],
-        "details": {},
     }
     row.update(overrides)
     return row
@@ -99,116 +98,100 @@ def _rank(rows, user_info):
 class TestAgeRules:
     def test_eligible_age_true(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=25))
-        assert row["details"]["age"]["result"] is True
         assert row["is_eligible"] is True
 
     def test_ineligible_age_false(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=45))
-        assert row["details"]["age"]["result"] is False
         assert row["is_eligible"] is False
 
     def test_boundary_age_19_needs_confirmation(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=19))
-        assert row["details"]["age"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_boundary_age_39_needs_confirmation(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=39))
-        assert row["details"]["age"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_age_39_with_min_39_is_true_under_current_spec(self):
         row = _first(_policy(age_min=39, age_max=45), _user(age=39))
-        assert row["details"]["age"]["result"] is True
         assert row["is_eligible"] is True
 
     def test_non_boundary_age_25_with_max_25_true(self):
         row = _first(_policy(age_min=19, age_max=25), _user(age=25))
-        assert row["details"]["age"]["result"] is True
         assert row["is_eligible"] is True
 
     def test_missing_user_age_none(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=None))
-        assert row["details"]["age"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_missing_policy_age_min_defaults_to_zero(self):
         row = _first(_policy(age_min=None, age_max=30), _user(age=25))
-        assert row["details"]["age"]["result"] is True
-        assert "0~30" in row["details"]["age"]["message"]
+        assert row["is_eligible"] is True
 
     def test_missing_policy_age_max_defaults_to_999(self):
         row = _first(_policy(age_min=19, age_max=None), _user(age=80))
-        assert row["details"]["age"]["result"] is True
-        assert "19~999" in row["details"]["age"]["message"]
+        assert row["is_eligible"] is True
 
     def test_string_age_is_casted(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age="25"))
-        assert row["details"]["age"]["result"] is True
         assert row["is_eligible"] is True
 
     def test_boolean_age_is_not_casted(self):
         row = _first(_policy(age_min=19, age_max=39), _user(age=True))
-        assert row["details"]["age"]["result"] is None
-        assert "나이 정보 없음" in row["details"]["age"]["message"]
+        assert any("나이 정보 없음" in r for r in row["reasons"])
         assert row["is_eligible"] is None
 
 
 class TestIncomeRules:
     def test_income_any_true(self):
         row = _first(_policy(income_level="0043001"), _user(income=9999))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_etc_true(self):
         row = _first(_policy(income_level="0043003"), _user(income=9999))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_empty_true(self):
         row = _first(_policy(income_level=""), _user(income=9999))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_unknown_code_fail_open_true(self):
         row = _first(_policy(income_level="9999999"), _user(income=9999))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_annual_met_true(self):
         row = _first(_policy(income_level="0043002", income_max=3600), _user(income=2400))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_annual_not_met_false(self):
         row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=4000))
-        assert row["details"]["income"]["result"] is False
         assert row["is_eligible"] is False
 
     def test_income_annual_missing_user_income_none(self):
         row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=None))
-        assert row["details"]["income"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_income_annual_missing_income_max_true(self):
         row = _first(_policy(income_level="0043002", income_max=None), _user(income=9000))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_annual_income_max_zero_true(self):
         row = _first(_policy(income_level="0043002", income_max=0), _user(income=9000))
-        assert row["details"]["income"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_string_income_is_casted(self):
         row = _first(_policy(income_level="0043002", income_max=3600), _user(income="2400"))
-        assert row["details"]["income"]["result"] is True
         assert row["is_eligible"] is True
 
     def test_boolean_income_is_not_casted(self):
         row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=False))
-        assert row["details"]["income"]["result"] is None
-        assert "소득 정보 없음" in row["details"]["income"]["message"]
+        assert any("소득 정보 없음" in r for r in row["reasons"])
         assert row["is_eligible"] is None
 
     def test_negative_income_max_logs_warning_and_passes(self, caplog):
         with caplog.at_level(logging.WARNING):
             row = _first(_policy(policy_id="NEG1", income_level="0043002", income_max=-500), _user(income=2400))
-        assert row["details"]["income"]["result"] is True
-        assert "비정상값" in row["details"]["income"]["message"]
+        assert row["is_eligible"] is True
         assert any(
             "income_max is negative" in rec.message
             and "policy_id=NEG1" in rec.message
@@ -220,33 +203,30 @@ class TestIncomeRules:
 class TestRegionRules:
     def test_seoul_wide_policy_seoul_true(self):
         row = _first(_policy(district="서울"), _user(district="강남구"))
-        assert row["details"]["region"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_seoul_wide_policy_seoulsi_true(self):
         row = _first(_policy(district="서울시"), _user(district="강남구"))
-        assert row["details"]["region"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_district_match_true(self):
         row = _first(_policy(district="강남구"), _user(district="강남구"))
-        assert row["details"]["region"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_district_mismatch_false(self):
         row = _first(_policy(district="강남구"), _user(district="서초구"))
-        assert row["details"]["region"]["result"] is False
         assert row["is_eligible"] is False
 
     def test_policy_district_empty_true(self):
         row = _first(_policy(district=""), _user(district="강남구"))
-        assert row["details"]["region"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_user_residence_empty_none(self):
         row = _first(_policy(district="강남구"), _user(district=""))
-        assert row["details"]["region"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_district_partial_match_is_false(self):
         row = _first(_policy(district="강남구"), _user(district="강남"))
-        assert row["details"]["region"]["result"] is False
         assert row["is_eligible"] is False
 
 
@@ -586,30 +566,21 @@ class TestRankPolicies:
 class TestUserInfoCompatibilityAliases:
     def test_district_alias_is_used_for_region_check(self):
         row = _first(_policy(district="강남구"), _user(district="강남구"))
-        assert row["details"]["region"]["result"] is True
+        assert row["is_eligible"] is True
 
     def test_income_level_numeric_alias_is_used_when_income_missing(self):
         row = _first(
             _policy(income_level="0043002", income_max=3600, district="서울"),
             _user(income=None, income_level=2400),
         )
-        assert row["details"]["income"]["result"] is True
         assert row["is_eligible"] is True
 
 
 class TestOutputStructure:
     def test_result_has_required_top_level_fields(self):
         row = _first(_policy(policy_id="PX1", title="정책1"), _user())
-        assert {"policy_id", "title", "is_eligible", "reasons", "details"} <= set(row.keys())
-
-    def test_details_contains_age_income_region_result_and_message(self):
-        row = _first(_policy(), _user())
-        details = row["details"]
-
-        assert {"age", "income", "region"} <= set(details.keys())
-        assert {"result", "message"} <= set(details["age"].keys())
-        assert {"result", "message"} <= set(details["income"].keys())
-        assert {"result", "message"} <= set(details["region"].keys())
+        assert {"policy_id", "title", "is_eligible", "reasons"} <= set(row.keys())
+        assert "details" not in row
 
     def test_json_round_trip(self):
         raw_rows = _invoke([_policy(policy_id="PX2", title="정책2")], _user())

@@ -478,7 +478,6 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 "title": policy.get("title") or policy.get("plcy_nm") or "",
                 "is_eligible": is_eligible,
                 "reasons": reasons,
-                "details": details,
                 # 응답 구조화(PolicyResult 조립)에 필요한 추가 필드
                 "apply_url": policy.get("apply_url") or "",
                 "detail_url": policy.get("detail_url") or "",
