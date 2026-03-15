@@ -278,11 +278,8 @@ def _rank_eligible_policies(
 
         score = 0
         title = _normalize_text(policy.get("title") or ranking_context.get("title")).lower()
-        description = _normalize_text(
-            policy.get("description") or ranking_context.get("description")
-        ).lower()
-        support_content = _normalize_text(
-            policy.get("support_content") or ranking_context.get("support_content")
+        summary = _normalize_text(
+            policy.get("summary") or ranking_context.get("summary")
         ).lower()
         category = _normalize_text(
             policy.get("category")
@@ -290,30 +287,30 @@ def _rank_eligible_policies(
             or policy.get("category_name")
             or ranking_context.get("category_name")
         ).lower()
-        title_and_description = f"{title} {description}"
+        title_and_summary = f"{title} {summary}"
 
         if "청년" in title:
             score += 30
 
-        if any(keyword in support_content for keyword in money_amount_keywords):
+        if any(keyword in summary for keyword in money_amount_keywords):
             score += 25
-        elif any(keyword in support_content for keyword in money_support_keywords):
+        elif any(keyword in summary for keyword in money_support_keywords):
             score += 15
-        elif any(keyword in support_content for keyword in money_discount_keywords):
+        elif any(keyword in summary for keyword in money_discount_keywords):
             score += 5
 
         if category and any(need.lower() in category for need in user_needs):
             score += 20
 
-        if any(need.lower() in title or need.lower() in description for need in user_needs if need):
+        if any(need.lower() in title or need.lower() in summary for need in user_needs if need):
             score += 10
 
         if user_housing in {"자가", "자가소유"} and any(
-            keyword in title_and_description for keyword in ("월세", "전세", "임차")
+            keyword in title_and_summary for keyword in ("월세", "전세", "임차")
         ):
             score -= 30
         elif user_housing in {"월세", "전세", "전월세"} and any(
-            keyword in title_and_description for keyword in ("월세", "전세", "임차", "주거")
+            keyword in title_and_summary for keyword in ("월세", "전세", "임차", "주거")
         ):
             score += 40
 
@@ -481,19 +478,17 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 "title": policy.get("title") or policy.get("plcy_nm") or "",
                 "is_eligible": is_eligible,
                 "reasons": reasons,
-                "details": details,
                 # 응답 구조화(PolicyResult 조립)에 필요한 추가 필드
                 "apply_url": policy.get("apply_url") or "",
                 "detail_url": policy.get("detail_url") or "",
                 "category": policy.get("category") or policy.get("category_name") or "",
-                "summary": policy.get("support_content") or policy.get("description") or policy.get("summary") or "",
+                "summary": policy.get("summary") or "",
                 "apply_end_date": _apply_end_date,
             }
             if is_eligible is True:
                 result["_ranking_context"] = {
                     "title": policy.get("title", ""),
-                    "description": policy.get("description", ""),
-                    "support_content": policy.get("support_content", ""),
+                    "summary": policy.get("summary", ""),
                     "category": policy.get("category", ""),
                     "category_name": policy.get("category_name", ""),
                     "apply_end_date": policy.get("apply_end_date"),

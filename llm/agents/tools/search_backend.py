@@ -67,17 +67,11 @@ def _parse_bool_env(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
-def _compose_full_text(title: str, description: str, support_content: str) -> str:
-    parts = [title.strip(), description.strip(), support_content.strip()]
-    return "\n\n".join(part for part in parts if part)
-
-
 def _doc_to_policy(doc: Document) -> dict[str, Any]:
     """Convert a LangChain Document to MCP-canonical policy dict."""
     metadata = doc.metadata or {}
     title = metadata.get("plcyNm", "")
-    description = (doc.page_content or "")[:1200]
-    support_content = metadata.get("plcySprtCn", "")
+    description = (doc.page_content or "")[:200]
 
     # earnMaxAmt: 정책 소득 상한(만원). 없으면 None.
     raw_earn_max = metadata.get("earnMaxAmt")
@@ -89,25 +83,15 @@ def _doc_to_policy(doc: Document) -> dict[str, Any]:
     return {
         "policy_id": (metadata.get("plcyNo") or "").strip(),
         "title": title,
-        "description": description,
-        "support_content": support_content,
-        "apply_method": "",
-        "apply_url": metadata.get("aplyUrlAddr", ""),
-        "district": metadata.get("region", ""),
-        "category": metadata.get("lclsfNm", ""),
-        "subcategory": metadata.get("mclsfNm", ""),
+        "summary": metadata.get("summary") or description,
         "age_min": metadata.get("minAge"),
         "age_max": metadata.get("maxAge"),
         "income_level": metadata.get("earnCndSeCd", ""),
         "income_max": income_max_val,
-        "apply_start_date": None,
+        "district": metadata.get("region", ""),
+        "category": metadata.get("lclsfNm", ""),
+        "apply_url": metadata.get("aplyUrlAddr", ""),
         "apply_end_date": None,
-        "business_start_date": None,
-        "business_end_date": None,
-        "full_text": _compose_full_text(title, description, support_content),
-        "retrieval_score": metadata.get("score"),
-        "rerank_score": metadata.get("rerank_score"),
-        "source": "direct_retriever",
     }
 
 
