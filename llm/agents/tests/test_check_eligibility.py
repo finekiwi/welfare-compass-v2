@@ -29,8 +29,8 @@ def _policy(**overrides):
 def _user(**overrides):
     user = {
         "age": 25,
-        "income": 2400,
-        "residence": "강남구",
+        "income_level": 2400,
+        "district": "강남구",
     }
     user.update(overrides)
     return user
@@ -177,12 +177,12 @@ class TestIncomeRules:
         assert row["details"]["income"]["result"] is True
 
     def test_income_annual_not_met_false(self):
-        row = _first(_policy(income_level="0043002", income_max=3600), _user(income=4000))
+        row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=4000))
         assert row["details"]["income"]["result"] is False
         assert row["is_eligible"] is False
 
     def test_income_annual_missing_user_income_none(self):
-        row = _first(_policy(income_level="0043002", income_max=3600), _user(income=None))
+        row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=None))
         assert row["details"]["income"]["result"] is None
         assert row["is_eligible"] is None
 
@@ -200,7 +200,7 @@ class TestIncomeRules:
         assert row["is_eligible"] is True
 
     def test_boolean_income_is_not_casted(self):
-        row = _first(_policy(income_level="0043002", income_max=3600), _user(income=False))
+        row = _first(_policy(income_level="0043002", income_max=3600), _user(income_level=False))
         assert row["details"]["income"]["result"] is None
         assert "소득 정보 없음" in row["details"]["income"]["message"]
         assert row["is_eligible"] is None
@@ -220,33 +220,33 @@ class TestIncomeRules:
 
 class TestRegionRules:
     def test_seoul_wide_policy_seoul_true(self):
-        row = _first(_policy(district="서울"), _user(residence="강남구"))
+        row = _first(_policy(district="서울"), _user(district="강남구"))
         assert row["details"]["region"]["result"] is True
 
     def test_seoul_wide_policy_seoulsi_true(self):
-        row = _first(_policy(district="서울시"), _user(residence="강남구"))
+        row = _first(_policy(district="서울시"), _user(district="강남구"))
         assert row["details"]["region"]["result"] is True
 
     def test_district_match_true(self):
-        row = _first(_policy(district="강남구"), _user(residence="강남구"))
+        row = _first(_policy(district="강남구"), _user(district="강남구"))
         assert row["details"]["region"]["result"] is True
 
     def test_district_mismatch_false(self):
-        row = _first(_policy(district="강남구"), _user(residence="서초구"))
+        row = _first(_policy(district="강남구"), _user(district="서초구"))
         assert row["details"]["region"]["result"] is False
         assert row["is_eligible"] is False
 
     def test_policy_district_empty_true(self):
-        row = _first(_policy(district=""), _user(residence="강남구"))
+        row = _first(_policy(district=""), _user(district="강남구"))
         assert row["details"]["region"]["result"] is True
 
     def test_user_residence_empty_none(self):
-        row = _first(_policy(district="강남구"), _user(residence=""))
+        row = _first(_policy(district="강남구"), _user(district=""))
         assert row["details"]["region"]["result"] is None
         assert row["is_eligible"] is None
 
     def test_district_partial_match_is_false(self):
-        row = _first(_policy(district="강남구"), _user(residence="강남"))
+        row = _first(_policy(district="강남구"), _user(district="강남"))
         assert row["details"]["region"]["result"] is False
         assert row["is_eligible"] is False
 
@@ -255,7 +255,7 @@ class TestJudgeRules:
     def test_all_eligible_true(self):
         row = _first(
             _policy(age_min=19, age_max=34, income_level="0043002", income_max=3600, district="서울"),
-            _user(age=27, income=2400, residence="강남구"),
+            _user(age=27, income_level=2400, district="강남구"),
         )
         assert row["is_eligible"] is True
         assert row["reasons"] == []
@@ -263,7 +263,7 @@ class TestJudgeRules:
     def test_only_age_false(self):
         row = _first(
             _policy(age_min=19, age_max=34, income_level="0043002", income_max=3600, district="서울"),
-            _user(age=45, income=2400, residence="강남구"),
+            _user(age=45, income_level=2400, district="강남구"),
         )
         assert row["is_eligible"] is False
         assert any("나이 미충족" in reason for reason in row["reasons"])
@@ -271,7 +271,7 @@ class TestJudgeRules:
     def test_only_income_none(self):
         row = _first(
             _policy(age_min=19, age_max=34, income_level="0043002", income_max=3600, district="서울"),
-            _user(age=27, income=None, residence="강남구"),
+            _user(age=27, income_level=None, district="강남구"),
         )
         assert row["is_eligible"] is None
         assert any("소득 정보 없음" in reason for reason in row["reasons"])
@@ -279,7 +279,7 @@ class TestJudgeRules:
     def test_age_false_and_income_none_false_wins(self):
         row = _first(
             _policy(age_min=19, age_max=34, income_level="0043002", income_max=3600, district="서울"),
-            _user(age=45, income=None, residence="강남구"),
+            _user(age=45, income_level=None, district="강남구"),
         )
         assert row["is_eligible"] is False
         assert any("나이 미충족" in reason for reason in row["reasons"])
@@ -293,7 +293,7 @@ class TestJudgeRules:
             _policy(policy_id="P4", title="지역부적격", district="서초구"),
             _policy(policy_id="P5", title="소득확인필요-강남구", district="강남구", income_level="0043002", income_max=3600),
         ]
-        user = _user(age=25, income=None, residence="강남구")
+        user = _user(age=25, income_level=None, district="강남구")
         rows = _invoke(policies, user)
 
         assert isinstance(rows, list)
@@ -314,7 +314,7 @@ class TestJudgeRules:
             _policy(policy_id="Q4", title="지역부적격", district="서초구"),
             _policy(policy_id="Q5", title="소득무관-적격", district="강남구", income_level="0043001"),
         ]
-        user = _user(age=25, income=2400, residence="강남구")
+        user = _user(age=25, income_level=2400, district="강남구")
         rows = _invoke(policies, user)
 
         assert isinstance(rows, list)
@@ -381,51 +381,19 @@ class TestErrorHandling:
         assert "user_info는 JSON 객체" in data["error"]
         assert data["policies_checked"] == 0
 
-    def test_all_mode_fetcher_exception_returns_guide_error(self):
-        def fetcher(_policy_ids):
-            raise RuntimeError("db down")
-
+    def test_all_mode_returns_guard_error(self):
         data = _invoke_raw(
             "all",
             json.dumps(_user(), ensure_ascii=False),
-            policy_fetcher=fetcher,
         )
 
-        assert data == {
-            "error": "전체 정책 조회 실패: db down",
-            "policies_checked": 0,
-            "guide": "조건을 좁혀서 다시 질문해주세요",
-        }
-
-    def test_all_mode_empty_fetcher_returns_guide_error(self):
-        data = _invoke_raw(
-            "all",
-            json.dumps(_user(), ensure_ascii=False),
-            policy_fetcher=lambda _policy_ids: [],
-        )
-
-        assert data == {
-            "error": "정책 데이터를 불러올 수 없습니다",
-            "policies_checked": 0,
-            "guide": "조건을 좁혀서 다시 질문해주세요",
-        }
+        assert data["status"] == "error"
+        assert "policies='all'은 지원하지 않습니다" in data["error"]
+        assert data["policies_checked"] == 0
 
 
 class TestNeedsFiltering:
-    def test_all_mode_filters_by_needs_category(self):
-        def fetcher(_policy_ids):
-            return [
-                _policy(policy_id="H1", title="청년월세지원", category="주거"),
-                _policy(policy_id="J1", title="청년취업지원", category="취업"),
-            ]
-
-        rows = _invoke_raw(
-            "all",
-            json.dumps(_user(needs=["주거"]), ensure_ascii=False),
-            policy_fetcher=fetcher,
-        )
-        assert isinstance(rows, list)
-        assert [row["policy_id"] for row in rows] == ["H1"]
+    pass
 
 
 
@@ -607,7 +575,7 @@ class TestRankPolicies:
             _policy(policy_id="N2", title="지역부적격", district="서초구"),
         ]
 
-        rows = _invoke(policies, _user(age=25, income=2400, residence="강남구"))
+        rows = _invoke(policies, _user(age=25, income_level=2400, district="강남구"))
 
         assert [row["policy_id"] for row in rows] == ["E2", "E1", "N1", "N2"]
         assert [row["is_eligible"] for row in rows] == [True, True, False, False]
@@ -618,7 +586,7 @@ class TestRankPolicies:
 
 class TestUserInfoCompatibilityAliases:
     def test_district_alias_is_used_for_region_check(self):
-        row = _first(_policy(district="강남구"), _user(residence=None, district="강남구"))
+        row = _first(_policy(district="강남구"), _user(district="강남구"))
         assert row["details"]["region"]["result"] is True
 
     def test_income_level_numeric_alias_is_used_when_income_missing(self):

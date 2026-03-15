@@ -397,38 +397,28 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
             )
 
         is_all_mode = isinstance(policies, str) and policies.strip() in ("all", "all_policies")
-        if is_all_mode:
-            try:
-                policies_list = policy_fetcher(None)
-            except Exception as exc:
-                return json.dumps(
-                    {
-                        "error": f"전체 정책 조회 실패: {str(exc)}",
-                        "policies_checked": 0,
-                        "guide": "조건을 좁혀서 다시 질문해주세요",
-                    },
-                    ensure_ascii=False,
-                )
-            if not policies_list:
-                return json.dumps(
-                    {
-                        "error": "정책 데이터를 불러올 수 없습니다",
-                        "policies_checked": 0,
-                        "guide": "조건을 좁혀서 다시 질문해주세요",
-                    },
-                    ensure_ascii=False,
-                )
-        else:
-            try:
-                policies_list = json.loads(policies)
-            except (json.JSONDecodeError, TypeError) as exc:
-                return json.dumps(
-                    {
-                        "error": f"policies 파싱 실패: {str(exc)}",
-                        "policies_checked": 0,
-                    },
-                    ensure_ascii=False,
-                )
+        is_empty = policies is None or (isinstance(policies, list) and len(policies) == 0) or policies == ""
+        if is_all_mode or is_empty:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "policies='all'은 지원하지 않습니다. search_policies로 먼저 검색 후 정책 ID 리스트를 전달하세요.",
+                    "policies_checked": 0,
+                    "guide": "search_policies(query=키워드) → check_eligibility(policies=검색결과JSON) 순서로 호출하세요.",
+                },
+                ensure_ascii=False,
+            )
+
+        try:
+            policies_list = json.loads(policies)
+        except (json.JSONDecodeError, TypeError) as exc:
+            return json.dumps(
+                {
+                    "error": f"policies 파싱 실패: {str(exc)}",
+                    "policies_checked": 0,
+                },
+                ensure_ascii=False,
+            )
 
         if not isinstance(policies_list, list):
             return json.dumps(
@@ -496,7 +486,7 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 "apply_url": policy.get("apply_url") or "",
                 "detail_url": policy.get("detail_url") or "",
                 "category": policy.get("category") or policy.get("category_name") or "",
-                "summary": policy.get("support_content") or policy.get("description") or "",
+                "summary": policy.get("support_content") or policy.get("description") or policy.get("summary") or "",
                 "apply_end_date": _apply_end_date,
             }
             if is_eligible is True:
