@@ -231,6 +231,7 @@ def _parse_chat_response(raw_text: str) -> tuple[ChatResponse, bool]:
             except (ValueError, TypeError):
                 continue
 
+    logger.warning("parse_chat_response fallback. raw_text_preview=%r", raw_text[:300])
     return ChatResponse(message=raw_text, policies=[], follow_up=None), False
 
 
@@ -239,6 +240,7 @@ def run_agent(
     message: str,
     thread_id: str = "default",
     verbose: bool = False,
+    max_iterations: int | None = None,
 ) -> dict:
     """
     Agent에 메시지 전달하고 응답 받기
@@ -259,8 +261,8 @@ def run_agent(
         }
     """
     # 설정
-    max_iterations = getattr(agent, "_max_iterations", 5)
-    recursion_limit = max_iterations * 2 + 1
+    effective_max_iterations = max_iterations if max_iterations is not None else getattr(agent, "_max_iterations", 5)
+    recursion_limit = effective_max_iterations * 2 + 1
     config = {
         "configurable": {"thread_id": thread_id},
         "recursion_limit": recursion_limit,

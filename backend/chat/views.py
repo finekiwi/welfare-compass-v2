@@ -98,12 +98,12 @@ def _is_valid_session_token(session_id: str, token: str | None) -> bool:
     return raw_value == session_id
 
 
-def _run_agent_with_timeout_and_retry(user_content: str, thread_id: str) -> dict:
+def _run_agent_with_timeout_and_retry(user_content: str, thread_id: str, max_iterations: int | None = None) -> dict:
     from llm.agents.agent import run_agent
 
     max_attempts = LLM_MAX_RETRIES + 1
     for attempt in range(1, max_attempts + 1):
-        result = run_agent(_get_agent(), user_content, thread_id)
+        result = run_agent(_get_agent(), user_content, thread_id, max_iterations=max_iterations)
         error = result.get("error")
         if not error:
             return result
@@ -233,10 +233,14 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
 
         user_content = serializer.validated_data["content"]
 
+        turn_count = ChatMessage.objects.filter(session=session, role="user").count()
+        dynamic_max_iterations = min(5 + turn_count, 10)
+
         try:
             result = _run_agent_with_timeout_and_retry(
                 user_content,
                 thread_id=str(session.id),
+                max_iterations=dynamic_max_iterations,
             )
         except Exception:
             logger.exception("LLM call failed (session_id=%s)", session.id)
