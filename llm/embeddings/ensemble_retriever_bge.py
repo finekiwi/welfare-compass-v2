@@ -86,7 +86,11 @@ _dense_retriever_cache = None
 
 
 def get_dense_retriever(k: int = DEFAULT_RETRIEVE_K):
-    """Chroma DB → LangChain retriever 변환 (싱글톤 캐싱)"""
+    """Chroma DB → LangChain retriever 변환 (싱글톤 캐싱)
+
+    Note: 첫 호출 시 k 값으로 고정됨. 현재 호출처(ensemble_search_with_bge)가
+    항상 동일한 k로 호출하므로 문제없음. k를 동적으로 바꿔야 하면 캐시 무효화 필요.
+    """
     global _dense_retriever_cache
     if _dense_retriever_cache is None:
         db = load_vector_db()
@@ -108,7 +112,11 @@ def create_ensemble_retriever(
     dense_weight: float = DEFAULT_DENSE_WEIGHT,
     k: int = DEFAULT_RETRIEVE_K
 ) -> EnsembleRetriever:
-    """BM25 + Dense 앙상블 리트리버 생성 (싱글톤 캐싱)"""
+    """BM25 + Dense 앙상블 리트리버 생성 (싱글톤 캐싱)
+
+    Note: 첫 호출 시 파라미터로 고정됨. 현재 호출처(ensemble_search_with_bge)가
+    항상 동일한 값으로 호출하므로 문제없음. 파라미터를 동적으로 바꿔야 하면 캐시 무효화 필요.
+    """
     global _ensemble_retriever_cache
     if _ensemble_retriever_cache is not None:
         return _ensemble_retriever_cache

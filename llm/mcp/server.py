@@ -51,7 +51,7 @@ def _warmup() -> None:
         search_policies_tool(query="워밍업", top_k=1)
         logger.info("✅ 워밍업 완료 (%.1fs)", time.time() - start)
     except Exception:
-        logger.warning("⚠️ 워밍업 실패 (%.1fs) — 첫 요청에서 초기화됩니다.", time.time() - start)
+        logger.warning("⚠️ 워밍업 실패 (%.1fs) — 첫 요청에서 초기화됩니다.", time.time() - start, exc_info=True)
 
 
 def main() -> None:
