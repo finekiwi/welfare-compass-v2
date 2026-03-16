@@ -39,6 +39,8 @@ from .user_session import (
 )
 from ..services import get_langfuse_handler, langfuse_session
 
+ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "gpt-4.1-mini")
+
 # user_session re-export: 외부 모듈(backend 등)이 agent.py를 통해 접근하던 기존 import 경로 유지
 __all__ = [
     "create_agent",
@@ -115,7 +117,7 @@ def _read_timeout_seconds(default: int = 25) -> int:
 
 
 def create_agent(
-    model: str = "gpt-4o-mini",
+    model: str = ORCHESTRATOR_MODEL,
     temperature: float = 0,
     checkpointer: Optional[MemorySaver] = None,
     max_iterations: int = 5,
