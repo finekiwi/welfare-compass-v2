@@ -339,9 +339,9 @@ def _extract_policies_from_messages(
     for msg in messages:
         if getattr(msg, "type", "") == "tool":
             name = getattr(msg, "name", "")
-            if name == "check_eligibility" and check_content is None:
+            if name == "check_eligibility":
                 check_content = msg.content if isinstance(msg.content, str) else None
-            elif name == "search_policies" and search_content is None:
+            elif name == "search_policies":
                 search_content = msg.content if isinstance(msg.content, str) else None
 
     if check_content is not None:
@@ -519,7 +519,8 @@ def run_agent(
                 )
 
         # ToolMessage 기반 policies 추출 (LLM JSON 파싱 대신 항상 도구 결과 사용)
-        extracted_policies = _extract_policies_from_messages(messages)
+        # checkpointer로 전체 히스토리가 쌓이므로 현재 턴 메시지만 넘김 (extract_info와 동일 패턴)
+        extracted_policies = _extract_policies_from_messages(messages[last_human_idx + 1:])
         if extracted_policies is not None:
             response = ChatResponse(
                 message=response.message,
