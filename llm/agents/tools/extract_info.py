@@ -1097,6 +1097,11 @@ def extract_info(message: str) -> str:
 
     try:
         result = extract_info_full(message)
+        # store에 즉시 반영 — 같은 턴에서 search_policies가 뒤따르더라도 scope guard가 작동하도록
+        from llm.agents.user_session import merge_user_info, _current_thread_id
+        thread_id = getattr(_current_thread_id, "value", "") or ""
+        if thread_id:
+            merge_user_info(thread_id, result)
         return json.dumps(result, ensure_ascii=False)
     except Exception:
         logger.exception("extract_info 도구 실행 중 오류가 발생했습니다.")

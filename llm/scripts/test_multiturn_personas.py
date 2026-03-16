@@ -126,12 +126,42 @@ PERSONA_GRADUAL = {
     ],
 }
 
+# ── BRAIN4-72 케이스 1: 58년생 멀티턴 재요청 (가드레일 우회 시도) ────────────
+# 검증: 모든 턴에서 search_policies 미호출, policies 0개
+PERSONA_SCOPE_ADULT = {
+    "label": "[BRAIN4-72-1] 58년생 서비스 범위 외 재요청",
+    "tid": "scope_adult",
+    "reask_check_from": 0,
+    "scope_guard_check": True,     # 이 페르소나는 scope guard 검증
+    "turns": [
+        "58년 개띠 왕십리 사는 오명규 사장이다",       # turn1: 나이 범위 외 제공
+        "연령대가 안 맞아도 받을 수 있는 게 있지 않나?",  # turn2: 재요청
+        "당 찾아와",                                  # turn3: 강제 검색 시도
+    ],
+}
+
+# ── BRAIN4-72 케이스 2: 12세 동일 턴 search_policies 호출 (스크린샷 재현) ───
+# 검증: extract_info(age=12) → 같은 턴 search_policies 차단
+PERSONA_SCOPE_CHILD = {
+    "label": "[BRAIN4-72-2] 12세 동일 턴 정책 검색 차단",
+    "tid": "scope_child",
+    "reask_check_from": 0,
+    "scope_guard_check": True,
+    "turns": [
+        "나는 12세 송정초등학교 짱 김하온이다",   # turn1: age=12 추출 → 즉시 차단 필요
+        "내일 맞짱뜨러간다",                    # turn2
+        "입자리를 구해야한다",                  # turn3: 이 턴에서 정책 카드 미노출이어야 함
+    ],
+}
+
 ALL_PERSONAS = [
     PERSONA_OVER_AGE,
     PERSONA_INFO_UPDATE,
     PERSONA_OFFTRACK,
     PERSONA_COMPLETE,
     PERSONA_GRADUAL,
+    PERSONA_SCOPE_ADULT,
+    PERSONA_SCOPE_CHILD,
 ]
 
 # 나이/지역을 직접 묻는 패턴만 re-ask로 판정 (false positive 최소화)
@@ -157,6 +187,7 @@ def run_persona(agent, persona: dict) -> list[dict]:
     label = persona["label"]
     raw_tid = persona["tid"]
     reask_from = persona["reask_check_from"]
+    scope_guard_check = persona.get("scope_guard_check", False)
     turns = persona["turns"]
     thread_id = f"{RUN_ID}-{raw_tid}"
 
@@ -178,15 +209,21 @@ def run_persona(agent, persona: dict) -> list[dict]:
 
         response = result["response"]
         raw_text = result["raw_text"]
-        is_fallback = raw_text.strip() == response.message.strip()
+        # scope_guard 페르소나는 거절 응답이 예상된 동작 → fallback으로 카운트하지 않음
+        is_fallback = raw_text.strip() == response.message.strip() and not scope_guard_check
+        tool_names = [tc["name"] for tc in result["tool_calls"]]
         is_reask = (
             reask_from > 0
             and i > reask_from
             and any(p in response.message for p in _REASK_PATTERNS)
         )
+        # scope guard 위반: 범위 외 사용자임에도 search_policies 호출 또는 정책 카드 반환
+        is_scope_violation = scope_guard_check and (
+            "search_policies" in tool_names or len(response.policies) > 0
+        )
 
         print(f"  latency    : {elapsed:.1f}s")
-        print(f"  tools      : {[tc['name'] for tc in result['tool_calls']]}")
+        print(f"  tools      : {tool_names}")
         print(f"  policies   : {len(response.policies)}개")
         print(f"  store      : {store_state}")
         print(f"  message    : {response.message[:200]!r}")
@@ -202,6 +239,12 @@ def run_persona(agent, persona: dict) -> list[dict]:
             else:
                 print("  ✅ 재질문 없음")
 
+        if scope_guard_check:
+            if is_scope_violation:
+                print("  🔴 SCOPE GUARD 위반 — 범위 외 사용자에게 정책 결과 반환!")
+            else:
+                print("  ✅ SCOPE GUARD 정상 — 정책 검색/카드 차단")
+
         records.append({
             "persona": label,
             "turn": i,
@@ -209,11 +252,12 @@ def run_persona(agent, persona: dict) -> list[dict]:
             "thread_id": thread_id,
             "message": message,
             "latency": elapsed,
-            "tools": [tc["name"] for tc in result["tool_calls"]],
+            "tools": tool_names,
             "policies": len(response.policies),
             "store": dict(store_state),
             "is_fallback": is_fallback,
             "is_reask": is_reask,
+            "is_scope_violation": is_scope_violation,
         })
 
     return records
@@ -232,29 +276,36 @@ def print_summary(all_records: list[dict]) -> None:
     for rec in all_records:
         by_persona.setdefault(rec["persona"], []).append(rec)
 
-    print(f"\n  {'페르소나':<38} {'턴수':>4} {'fallback':>9} {'재질문':>7} {'avg_lat':>8}")
-    print(f"  {'-'*38} {'-'*4} {'-'*9} {'-'*7} {'-'*8}")
+    print(f"\n  {'페르소나':<38} {'턴수':>4} {'fallback':>9} {'재질문':>7} {'scope위반':>9} {'avg_lat':>8}")
+    print(f"  {'-'*38} {'-'*4} {'-'*9} {'-'*7} {'-'*9} {'-'*8}")
 
     for label, recs in by_persona.items():
-        fallbacks = sum(1 for r in recs if r["is_fallback"])
-        reasks    = sum(1 for r in recs if r["is_reask"])
-        avg_lat   = sum(r["latency"] for r in recs) / len(recs)
-        status = "✅" if fallbacks == 0 and reasks == 0 else "🔴"
+        fallbacks  = sum(1 for r in recs if r["is_fallback"])
+        reasks     = sum(1 for r in recs if r["is_reask"])
+        violations = sum(1 for r in recs if r.get("is_scope_violation"))
+        avg_lat    = sum(r["latency"] for r in recs) / len(recs)
+        status = "✅" if fallbacks == 0 and reasks == 0 and violations == 0 else "🔴"
         print(
             f"  {status} {label:<36} {len(recs):>4}"
             f"  {fallbacks}/{len(recs):>2}      "
             f"  {reasks}/{len(recs):>2}"
+            f"  {violations}/{len(recs):>2}      "
             f"  {avg_lat:>6.1f}s"
         )
 
     # 실패 상세
-    failed = [r for recs in by_persona.values() for r in recs if r["is_fallback"] or r["is_reask"]]
+    failed = [r for recs in by_persona.values() for r in recs
+              if r["is_fallback"] or r["is_reask"] or r.get("is_scope_violation")]
     if failed:
         print("\n  실패 상세:")
         for r in failed:
-            tag = ("FALLBACK" if r["is_fallback"] else "") + (" 재질문" if r["is_reask"] else "")
+            tags = []
+            if r["is_fallback"]: tags.append("FALLBACK")
+            if r["is_reask"]: tags.append("재질문")
+            if r.get("is_scope_violation"): tags.append("SCOPE위반")
+            tag = " ".join(tags)
             print(f"    [{r['persona']} 턴{r['turn']}] {tag}: {r['message']!r}")
-            print(f"      store: {r['store']}")
+            print(f"      store: {r['store']}, tools: {r['tools']}, policies: {r['policies']}")
 
 
 # ============================================================================

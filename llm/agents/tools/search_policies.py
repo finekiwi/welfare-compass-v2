@@ -2,14 +2,35 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from langchain_core.tools import tool
 
 from .search_backend import DEFAULT_TOP_K, get_search_backend, normalize_top_k
+from .check_eligibility import YOUTH_AGE_MIN_BOUNDARY, YOUTH_AGE_MAX_BOUNDARY
+from llm.agents.user_session import get_user_info, _current_thread_id, OUT_OF_SCOPE_SERVICES
 
 logger = logging.getLogger(__name__)
+
+
+def _get_out_of_scope_sentinel(age: int) -> str | None:
+    """나이가 서비스 범위 밖이면 scope_blocked JSON sentinel 반환, 범위 내면 None."""
+    if age < YOUTH_AGE_MIN_BOUNDARY or age > YOUTH_AGE_MAX_BOUNDARY:
+        return json.dumps(
+            {
+                "scope_blocked": True,
+                "message": (
+                    f"나이 {age}세는 복지나침반 대상"
+                    f"({YOUTH_AGE_MIN_BOUNDARY}~{YOUTH_AGE_MAX_BOUNDARY}세)이 아닙니다. "
+                    f"{OUT_OF_SCOPE_SERVICES}를 안내하세요."
+                ),
+                "policies": [],
+            },
+            ensure_ascii=False,
+        )
+    return None
 
 
 def _shorten(text: str, limit: int = 180) -> str:
@@ -73,6 +94,14 @@ def search_policies(
         top_k: 반환할 최대 정책 수
         income_max: 사용자 소득(만원). 설정 시 income_max 미만인 정책 제외.
     """
+    thread_id = getattr(_current_thread_id, "value", "") or ""
+    if thread_id:
+        age = get_user_info(thread_id).get("age")
+        if isinstance(age, int):
+            sentinel = _get_out_of_scope_sentinel(age)
+            if sentinel:
+                return sentinel
+
     normalized_top_k = normalize_top_k(top_k)
     backend = get_search_backend()
 

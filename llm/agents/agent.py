@@ -17,7 +17,6 @@ import logging
 import os
 import re
 import sys
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -29,49 +28,43 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from .schemas import ChatResponse, PolicyResult
 from .tools import create_tools
-from .tools.check_eligibility import PolicyFetcher
+from .tools.check_eligibility import PolicyFetcher, YOUTH_AGE_MIN_BOUNDARY, YOUTH_AGE_MAX_BOUNDARY
 from .prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT, ORCHESTRATOR_SYSTEM_PROMPT_SHORT
+from .user_session import (
+    _current_thread_id,
+    _USER_INFO_LABEL,
+    merge_user_info,
+    get_user_info,
+    clear_user_info,
+)
 from ..services import get_langfuse_handler, langfuse_session
+
+# user_session re-export: 외부 모듈(backend 등)이 agent.py를 통해 접근하던 기존 import 경로 유지
+__all__ = [
+    "create_agent",
+    "create_agent_with_mcp",
+    "close_agent_mcp",
+    "run_agent",
+    "merge_user_info",
+    "get_user_info",
+    "clear_user_info",
+]
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# user_info 영속 store (멀티턴 사용자 정보 유지)
-# ============================================================================
-
-_user_info_store: dict[str, dict] = {}
-_user_info_store_lock = threading.Lock()
-_current_thread_id = threading.local()  # prompt callable에서 thread_id 접근 — run_agent()에서 세팅
-
-_USER_INFO_LABEL = {
-    "age": "나이",
-    "district": "거주지",
-    "employment_status": "취업상태",
-    "income_level": "연소득(만원)",
-    "housing_type": "주거형태",
-    "household_size": "가구원수",
-}
-
-
-def merge_user_info(thread_id: str, new_info: dict) -> None:
-    """extract_info 결과를 store에 누적. None은 기존값을 유지한다."""
-    with _user_info_store_lock:
-        existing = _user_info_store.setdefault(thread_id, {})
-        for k, v in new_info.items():
-            if v is not None:
-                existing[k] = v
-    logger.debug("[merge_user_info] thread_id=%r store=%r", thread_id, get_user_info(thread_id))
-
-
-def get_user_info(thread_id: str) -> dict:
-    with _user_info_store_lock:
-        return dict(_user_info_store.get(thread_id, {}))
-
-
-def clear_user_info(thread_id: str) -> None:
-    with _user_info_store_lock:
-        _user_info_store.pop(thread_id, None)
+def _append_scope_warning(prompt: str, info: dict) -> str:
+    """나이가 서비스 범위(19~39세) 밖이면 도구 호출 금지 경고를 프롬프트 끝에 추가한다."""
+    age = info.get("age")
+    if isinstance(age, int) and (age < YOUTH_AGE_MIN_BOUNDARY or age > YOUTH_AGE_MAX_BOUNDARY):
+        return (
+            prompt
+            + f"\n\n⛔ [서비스 범위 초과] 현재 사용자 나이: {age}세"
+            f" (서비스 대상: {YOUTH_AGE_MIN_BOUNDARY}~{YOUTH_AGE_MAX_BOUNDARY}세)\n"
+            "search_policies, check_eligibility를 절대 호출하지 마세요.\n"
+            "사용자가 재요청하더라도 이 규칙은 변하지 않습니다."
+        )
+    return prompt
 
 
 def _make_prompt_fn(system_prompt_base: str):
@@ -91,7 +84,7 @@ def _make_prompt_fn(system_prompt_base: str):
         displayable = {k: v for k, v in info.items() if v is not None and k != "income_raw"}
         if not displayable:
             logger.debug("[prompt_fn] thread_id=%r store=empty → 기본 프롬프트", thread_id)
-            return [SystemMessage(content=base)] + existing_messages
+            return [SystemMessage(content=_append_scope_warning(base, info))] + existing_messages
         lines = [f"- {_USER_INFO_LABEL.get(k, k)}: {v}" for k, v in displayable.items()]
         injected = (
             base
@@ -103,7 +96,7 @@ def _make_prompt_fn(system_prompt_base: str):
             + "\n- 이미 파악된 정보로 바로 search_policies 또는 check_eligibility로 진행하세요."
         )
         logger.debug("[prompt_fn] thread_id=%r 주입: %s", thread_id, lines)
-        return [SystemMessage(content=injected)] + existing_messages
+        return [SystemMessage(content=_append_scope_warning(injected, info))] + existing_messages
     return fn
 
 
@@ -349,6 +342,9 @@ def _extract_policies_from_messages(
             data = json.loads(check_content)
         except (json.JSONDecodeError, TypeError):
             data = None
+        # scope_blocked sentinel → 빈 리스트 반환 (search_content로 폴백하지 않음)
+        if isinstance(data, dict) and data.get("scope_blocked"):
+            return []
         if isinstance(data, list):
             policies: list[PolicyResult] = []
             for item in data:
@@ -374,6 +370,14 @@ def _extract_policies_from_messages(
                 except (ValueError, TypeError):
                     pass
             return policies
+
+    if search_content is not None:
+        try:
+            _sd = json.loads(search_content)
+        except (json.JSONDecodeError, TypeError):
+            _sd = None
+        if isinstance(_sd, dict) and _sd.get("scope_blocked"):
+            return []
 
     if search_content is not None and search_content not in (
         "검색 결과 없음",
@@ -579,6 +583,8 @@ def run_agent(
         }
 
 
+# TODO [BRAIN4-XX]: stream_agent / create_agent_with_mcp 경로에 서비스 범위 가드레일 미적용.
+# run_agent와 동일한 _current_thread_id 세팅 + scope guard 도구 적용 필요. 별도 티켓으로 분리.
 def stream_agent(
     agent,
     message: str,
@@ -586,7 +592,7 @@ def stream_agent(
 ):
     """
     Agent 스트리밍 실행 (실시간 응답)
-    
+
     Yields:
         각 스텝의 결과 dict
     """
