@@ -12,6 +12,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import ChatMessage, ChatSession
+from llm.agents.agent import clear_user_info
 from .serializers import (
     ChatMessageSerializer,
     ChatSessionDetailSerializer,
@@ -250,6 +251,7 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             return forbidden
 
         if session.is_expired():
+            clear_user_info(str(session.id))
             return Response(
                 {
                     "error": "Session expired. Please start a new session.",
