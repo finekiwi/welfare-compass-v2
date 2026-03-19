@@ -16,7 +16,7 @@ export const MOCK_PROFILE: MyProfile = {
     jobStatus: "job_seeking",
 
     // 학력
-    educationStatus: "graduated",
+    educationStatus: "university",
 
     // 결혼
     marriageStatus: "single",
