@@ -21,19 +21,18 @@ export function ChatInput() {
   return (
     <div className="flex items-center gap-2">
       <input
-        className="flex-1 rounded-xl border px-4 py-3 text-sm outline-none disabled:bg-gray-100"
+        className="flex-1 rounded-xl border px-4 py-3 text-sm outline-none"
         placeholder={isLoading ? "답변을 기다리는 중..." : "궁금한 복지 정책을 입력해보세요..."}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.nativeEvent.isComposing) send();
         }}
-        disabled={isLoading}
       />
       <button
         type="button"
         onClick={send}
-        className="rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white disabled:bg-gray-400"
+        className="rounded-xl bg-blue-800 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
         disabled={isLoading}
       >
         전송

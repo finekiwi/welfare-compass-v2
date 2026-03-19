@@ -1,3 +1,7 @@
+# ⚠️ DEPRECATED: 이 파일은 더 이상 Docker 빌드에 사용되지 않습니다.
+# 의존성 기준: 루트 pyproject.toml + uv.lock
+# 로컬 개발 시에도 `uv sync` 사용을 권장합니다.
+#
 Django>=5.0,<6.0
 djangorestframework>=3.14
 psycopg2-binary>=2.9
@@ -12,3 +16,4 @@ requests>=2.31.0
 cryptography>=41.0.0
 django-axes>=6.0.0
 Pillow>=12.1.1
+gunicorn>=22.0.0

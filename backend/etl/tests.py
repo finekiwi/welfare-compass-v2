@@ -2,53 +2,65 @@ from datetime import date
 
 from django.test import SimpleTestCase, TestCase
 
-from etl.services.transformer import PolicyTransformer, ZIPCD_TO_DISTRICT
+from etl.services.transformer import PolicyTransformer, ZIPCD_TO_DISTRICT, _safe_replace_year
+
+THIS_YEAR = date.today().year
 
 
 class PolicyTransformerDateFixTests(SimpleTestCase):
     def setUp(self):
         self.transformer = PolicyTransformer()
 
-    def test_parse_date_with_year_fix_2024_to_2026(self):
-        parsed = self.transformer._parse_date_with_year_fix("20240916")
-        self.assertEqual(parsed, date(2026, 9, 16))
+    def test_parse_date_with_year_fix_minus2_to_current(self):
+        parsed = self.transformer._parse_date_with_year_fix(f"{THIS_YEAR - 2}0916")
+        self.assertEqual(parsed, date(THIS_YEAR, 9, 16))
 
-    def test_parse_date_with_year_fix_2025_to_2026(self):
-        parsed = self.transformer._parse_date_with_year_fix("20250630")
-        self.assertEqual(parsed, date(2026, 6, 30))
+    def test_parse_date_with_year_fix_minus1_to_current(self):
+        parsed = self.transformer._parse_date_with_year_fix(f"{THIS_YEAR - 1}0630")
+        self.assertEqual(parsed, date(THIS_YEAR, 6, 30))
 
-    def test_parse_date_with_year_fix_2026_unchanged(self):
-        parsed = self.transformer._parse_date_with_year_fix("20260101")
-        self.assertEqual(parsed, date(2026, 1, 1))
+    def test_parse_date_with_year_fix_current_unchanged(self):
+        parsed = self.transformer._parse_date_with_year_fix(f"{THIS_YEAR}0101")
+        self.assertEqual(parsed, date(THIS_YEAR, 1, 1))
 
     def test_parse_date_range_with_year_fix(self):
-        start, end = self.transformer._parse_date_range_with_year_fix("20240916 ~ 20251231")
-        self.assertEqual(start, date(2026, 9, 16))
-        self.assertEqual(end, date(2026, 12, 31))
+        start, end = self.transformer._parse_date_range_with_year_fix(
+            f"{THIS_YEAR - 2}0916 ~ {THIS_YEAR - 1}1231"
+        )
+        self.assertEqual(start, date(THIS_YEAR, 9, 16))
+        self.assertEqual(end, date(THIS_YEAR, 12, 31))
 
     def test_normalize_text_years(self):
         self.assertEqual(
-            self.transformer._normalize_text_years("2024 청년 2025 지원"),
-            "2026 청년 2026 지원"
+            self.transformer._normalize_text_years(
+                f"{THIS_YEAR - 2} 청년 {THIS_YEAR - 1} 지원"
+            ),
+            f"{THIS_YEAR} 청년 {THIS_YEAR} 지원"
         )
 
     def test_transform_keeps_policy_id_and_normalizes_text_fields(self):
+        y2 = str(THIS_YEAR - 2)
+        y1 = str(THIS_YEAR - 1)
         raw = {
             "plcyNo": "P-001",
-            "plcyNm": "2024 청년 일자리 정책",
-            "plcyExplnCn": "2025년 신청 가능",
-            "plcySprtCn": "2024~2025 지원금",
-            "plcyAplyMthdCn": "2025 온라인 신청",
-            "aplyYmd": "20240916 ~ 20251231",
+            "plcyNm": f"{y2} 청년 일자리 정책",
+            "plcyExplnCn": f"{y1}년 신청 가능",
+            "plcySprtCn": f"{y2}~{y1} 지원금",
+            "plcyAplyMthdCn": f"{y1} 온라인 신청",
+            "aplyYmd": f"{y2}0916 ~ {y1}1231",
         }
 
         transformed = self.transformer.transform(raw)
 
         self.assertEqual(transformed.policy_id, "P-001")
-        self.assertIn("2026", transformed.title)
-        self.assertIn("2026", transformed.description)
-        self.assertIn("2026", transformed.support_content)
-        self.assertIn("2026", transformed.apply_method)
+        self.assertIn(str(THIS_YEAR), transformed.title)
+        self.assertIn(str(THIS_YEAR), transformed.description)
+        self.assertIn(str(THIS_YEAR), transformed.support_content)
+        self.assertIn(str(THIS_YEAR), transformed.apply_method)
+
+    def test_safe_replace_year_leap_day_falls_back_to_feb28(self):
+        result = _safe_replace_year(date(2024, 2, 29), 2025)
+        self.assertEqual(result, date(2025, 2, 28))
 
 
 class PolicyTransformerDistrictTests(SimpleTestCase):

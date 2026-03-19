@@ -17,8 +17,15 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev --frozen
 
+# 비루트 사용자 생성
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --shell /bin/bash --create-home appuser && \
+    chown -R appuser:appuser /app
+
 # 소스 복사
-COPY llm/ /app/llm/
+COPY --chown=appuser:appuser llm/ /app/llm/
+
+USER appuser
 
 EXPOSE 8001
 

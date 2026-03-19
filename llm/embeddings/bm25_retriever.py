@@ -13,6 +13,8 @@ from typing import List, Optional
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
+from embeddings.policy_utils import create_policy_text, extract_metadata
+
 # ============================================================================
 # 경로 설정
 # ============================================================================
@@ -51,47 +53,6 @@ def korean_preprocess(text: str) -> List[str]:
         return text.split()
 
 
-# ============================================================================
-# Document 생성 (vector_store.py와 동일한 구조)
-# ============================================================================
-def create_policy_text(policy: dict) -> str:
-    """정책 데이터를 검색 최적화된 텍스트로 변환"""
-    parts = []
-    
-    if policy.get('plcyNm'):
-        parts.append(f"정책명: {policy['plcyNm']}")
-        parts.append(policy['plcyNm'])
-    
-    if policy.get('plcyExplnCn'):
-        parts.append(f"설명: {policy['plcyExplnCn']}")
-    
-    if policy.get('plcySprtCn'):
-        parts.append(f"지원내용: {policy['plcySprtCn']}")
-    
-    if policy.get('sprtTrgtCn'):
-        parts.append(f"대상: {policy['sprtTrgtCn']}")
-    
-    return " | ".join(parts)
-
-
-def extract_metadata(policy: dict) -> dict:
-    """정책 데이터에서 메타데이터 추출"""
-    return {
-        "plcyNo": policy.get('plcyNo', ''),
-        "plcyNm": policy.get('plcyNm', ''),
-        "minAge": int(policy.get('sprtTrgtMinAge') or 0),
-        "maxAge": int(policy.get('sprtTrgtMaxAge') or 99),
-        "region": policy.get('rgtrHghrkInstCdNm', ''),
-        "earnCndSeCd": policy.get('earnCndSeCd', ''),
-        "earnMaxAmt": policy.get('earnMaxAmt'),
-        "lclsfNm": policy.get('lclsfNm', ''),
-        "mclsfNm": policy.get('mclsfNm', ''),
-        "aplyYmd": policy.get('aplyYmd', ''),
-        "aplyUrlAddr": policy.get('aplyUrlAddr', ''),
-        "plcySprtCn": policy.get('plcySprtCn', '')[:200] if policy.get('plcySprtCn') else '',
-    }
-
-
 def load_policy_documents() -> List[Document]:
     """정책 JSON 로드 → LangChain Document 리스트 변환"""
     if not os.path.exists(DATA_PATH):
@@ -115,46 +76,51 @@ def load_policy_documents() -> List[Document]:
 # BM25 리트리버 생성
 # ============================================================================
 _bm25_retriever: Optional[BM25Retriever] = None
+_BM25_MAX_K = 50  # 싱글톤 초기화 시 사용할 최대 k
 
 
-def get_bm25_retriever(k: int = 10) -> BM25Retriever:
+def get_bm25_retriever(k: int = _BM25_MAX_K) -> BM25Retriever:
     """BM25 리트리버 싱글톤 반환
-    
+
+    싱글톤 인스턴스의 k를 직접 변경하면 동시 요청 시 race condition이 발생하므로,
+    최초 초기화 시에만 k를 적용한다. 호출마다 결과 수를 조절하려면
+    search_policies_bm25()의 k 파라미터를 사용할 것.
+
     Args:
-        k: 검색 결과 개수
-        
+        k: 최초 초기화 시 적용할 검색 결과 개수 (이미 초기화된 경우 무시됨)
+
     Returns:
         BM25Retriever 인스턴스
     """
     global _bm25_retriever
-    
+
     if _bm25_retriever is None:
         print("⚙️  BM25 리트리버 초기화 중...")
         documents = load_policy_documents()
-        
+
         _bm25_retriever = BM25Retriever.from_documents(
             documents,
             preprocess_func=korean_preprocess,
+            k=_BM25_MAX_K,
         )
         print(f"✅ BM25 리트리버 초기화 완료 (문서 {len(documents)}개)")
-    
-    _bm25_retriever.k = k
+
     return _bm25_retriever
 
 
 def search_policies_bm25(query: str, k: int = 5) -> List[Document]:
     """BM25 기반 정책 검색
-    
+
     Args:
         query: 검색 쿼리 (자연어)
         k: 반환할 결과 개수
-        
+
     Returns:
         검색 결과 Document 리스트
     """
-    retriever = get_bm25_retriever(k=k)
+    retriever = get_bm25_retriever()
     results = retriever.invoke(query)
-    return results
+    return results[:k]
 
 
 # ============================================================================

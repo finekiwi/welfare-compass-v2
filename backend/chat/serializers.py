@@ -14,10 +14,11 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     """
     id = serializers.SerializerMethodField()
     createdAt = serializers.SerializerMethodField()
+    policies = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatMessage
-        fields = ['id', 'role', 'content', 'createdAt']
+        fields = ['id', 'role', 'content', 'createdAt', 'policies']
 
     def get_id(self, obj):
         """id를 문자열로 변환 (프론트 타입: string)"""
@@ -26,6 +27,13 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     def get_createdAt(self, obj):
         """timestamp를 밀리초로 변환 (프론트 타입: number)"""
         return int(obj.created_at.timestamp() * 1000)
+
+    def get_policies(self, obj):
+        """assistant 메시지의 정책 카드 데이터 (없으면 빈 배열)"""
+        policies = obj.metadata.get('policies', [])
+        if not isinstance(policies, list):
+            return []
+        return policies
 
 
 class ChatSessionSerializer(serializers.ModelSerializer):
@@ -92,3 +100,4 @@ class SendMessageSerializer(serializers.Serializer):
     POST /api/v1/chat/sessions/{id}/send/ 요청 바디 검증
     """
     content = serializers.CharField(max_length=500, help_text='메시지 내용 (최대 500자)')
+    include_profile = serializers.BooleanField(default=False, required=False, help_text='True면 사용자 프로필 정보를 LLM에 주입')

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime
 from typing import Any, Callable, Optional
 
 from langchain_core.tools import BaseTool, tool
+from llm.agents.user_session import get_user_info, _current_thread_id, OUT_OF_SCOPE_SERVICES
 
 # 소득 코드 상수 (backend/policies/services/matching_keys.py와 동일 값 유지)
 INCOME_ANY = "0043001"
@@ -240,31 +242,157 @@ def _judge(details: dict[str, dict[str, Any]]) -> tuple[bool | None, list[str]]:
     return True, []
 
 
+def _rank_eligible_policies(
+    eligible: list[dict[str, Any]],
+    user_info: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """적격 정책 리스트를 룰베이스 점수로 정렬하여 반환한다."""
+    if not eligible:
+        return eligible
+
+    raw_user_needs = user_info.get("needs")
+    if isinstance(raw_user_needs, str):
+        raw_user_needs = [raw_user_needs]
+    user_needs = _normalize_needs(raw_user_needs)
+    user_housing = _normalize_text(user_info.get("housing_type")).lower()
+    user_employment = _normalize_text(user_info.get("employment_status")).lower()
+
+    # extract_info canonical value 기준: {"재직", "자영업", "무직", "구직중", "학생", "창업준비", "프리랜서"}
+    employment_keywords = {
+        "구직중": ["취업", "구직", "취준", "일자리"],
+        "재직": ["재직", "직장인", "근로"],
+        "자영업": ["자영업", "소상공인", "가게"],
+        "창업준비": ["창업", "사업", "스타트업"],
+        "학생": ["대학", "학생", "학자금"],
+        "무직": ["취업", "구직", "일자리"],
+        "프리랜서": ["프리랜서", "계약직", "알바"],
+    }
+    core_keywords = ["지원", "혜택", "무료", "할인", "교육", "상담"]
+    money_amount_keywords = ["만원", "백만", "천만", "억원"]
+    money_support_keywords = ["지원금", "보조금", "장학금", "수당"]
+    money_discount_keywords = ["감면", "할인", "무료"]
+
+    for policy in eligible:
+        ranking_context = policy.pop("_ranking_context", None)
+        if not isinstance(ranking_context, dict):
+            ranking_context = {}
+
+        score = 0
+        title = _normalize_text(policy.get("title") or ranking_context.get("title")).lower()
+        summary = _normalize_text(
+            policy.get("summary") or ranking_context.get("summary")
+        ).lower()
+        category = _normalize_text(
+            policy.get("category")
+            or ranking_context.get("category")
+            or policy.get("category_name")
+            or ranking_context.get("category_name")
+        ).lower()
+        title_and_summary = f"{title} {summary}"
+
+        if "청년" in title:
+            score += 30
+
+        if any(keyword in summary for keyword in money_amount_keywords):
+            score += 25
+        elif any(keyword in summary for keyword in money_support_keywords):
+            score += 15
+        elif any(keyword in summary for keyword in money_discount_keywords):
+            score += 5
+
+        if category and any(need.lower() in category for need in user_needs):
+            score += 20
+
+        if any(need.lower() in title or need.lower() in summary for need in user_needs if need):
+            score += 10
+
+        if user_housing in {"자가", "자가소유"} and any(
+            keyword in title_and_summary for keyword in ("월세", "전세", "임차")
+        ):
+            score -= 30
+        elif user_housing in {"월세", "전세", "전월세"} and any(
+            keyword in title_and_summary for keyword in ("월세", "전세", "임차", "주거")
+        ):
+            score += 40
+
+        if any(keyword in title for keyword in employment_keywords.get(user_employment, [])):
+            score += 20
+
+        if any(keyword in title for keyword in core_keywords):
+            score += 10
+
+        end_date_raw = policy.get("apply_end_date") or ranking_context.get("apply_end_date")
+        end_date: date | None = None
+        if isinstance(end_date_raw, datetime):
+            end_date = end_date_raw.date()
+        elif isinstance(end_date_raw, date):
+            end_date = end_date_raw
+        elif isinstance(end_date_raw, str):
+            try:
+                end_date = datetime.strptime(end_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                end_date = None
+
+        if end_date is not None:
+            days_left = (end_date - date.today()).days
+            if 0 <= days_left <= 7:
+                score += 20
+            elif 7 < days_left <= 14:
+                score += 10
+
+        policy["_priority_score"] = score
+
+    eligible.sort(key=lambda item: item.get("_priority_score", 0), reverse=True)
+    return eligible
+
+
 def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
     """policy_fetcher를 주입받아 check_eligibility 도구를 생성한다."""
 
     @tool
-    def check_eligibility(policies: str, user_info: str) -> str:
+    def check_eligibility(policies: str, user_info: str = "") -> str:
         """
         검색된 정책에 대해 사용자 자격요건을 룰베이스로 판정한다.
 
         Args:
-            policies: search_policies 결과 JSON 문자열 또는 "all"/"all_policies"
-            user_info: extract_info 결과 JSON 문자열 (사용자 정보 dict)
+            policies: search_policies 결과 JSON 문자열
+            user_info: 사용자 정보 JSON 문자열 (생략 가능 — 생략 시 세션 store에서 자동 주입)
 
         Returns:
             판정 결과 JSON 문자열 (정책별 is_eligible + reasons + details)
         """
-        try:
-            info = json.loads(user_info)
-        except (json.JSONDecodeError, TypeError) as exc:
-            return json.dumps(
-                {
-                    "error": f"user_info 파싱 실패: {str(exc)}",
-                    "policies_checked": 0,
-                },
-                ensure_ascii=False,
-            )
+        thread_id = getattr(_current_thread_id, "value", "") or ""
+        if thread_id:
+            age = get_user_info(thread_id).get("age")
+            if isinstance(age, int) and (age < YOUTH_AGE_MIN_BOUNDARY or age > YOUTH_AGE_MAX_BOUNDARY):
+                return json.dumps(
+                    {
+                        "scope_blocked": True,
+                        "message": (
+                            f"나이 {age}세는 복지나침반 대상"
+                            f"({YOUTH_AGE_MIN_BOUNDARY}~{YOUTH_AGE_MAX_BOUNDARY}세)이 아닙니다. "
+                            f"{OUT_OF_SCOPE_SERVICES}를 안내하세요."
+                        ),
+                        "policies": [],
+                        "policies_checked": 0,
+                    },
+                    ensure_ascii=False,
+                )
+
+        # user_info 미전달 시 store에서 자동 주입
+        if not user_info and thread_id:
+            info = get_user_info(thread_id)
+        else:
+            try:
+                info = json.loads(user_info)
+            except (json.JSONDecodeError, TypeError) as exc:
+                return json.dumps(
+                    {
+                        "error": f"user_info 파싱 실패: {str(exc)}",
+                        "policies_checked": 0,
+                    },
+                    ensure_ascii=False,
+                )
 
         if not isinstance(info, dict):
             return json.dumps(
@@ -275,29 +403,42 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 ensure_ascii=False,
             )
 
+        # 필수 정보 게이팅: 나이·거주지·소득 중 2개 이상 없으면 매칭 실행 안 함
+        _filled = sum(1 for k in ("age", "district", "income_level") if info.get(k) is not None)
+        if _filled < 2:
+            return json.dumps(
+                {
+                    "error": "사용자 정보 부족",
+                    "message": "나이, 거주지, 소득 중 2개 이상이 필요합니다.",
+                    "policies_checked": 0,
+                    "guide": "나이 → 거주지 → 소득 순으로 추가 질문 후 다시 호출하세요.",
+                },
+                ensure_ascii=False,
+            )
+
         is_all_mode = isinstance(policies, str) and policies.strip() in ("all", "all_policies")
-        if is_all_mode:
-            try:
-                policies_list = policy_fetcher(None)
-            except Exception as exc:
-                return json.dumps(
-                    {
-                        "error": f"policy fetch 실패: {str(exc)}",
-                        "policies_checked": 0,
-                    },
-                    ensure_ascii=False,
-                )
-        else:
-            try:
-                policies_list = json.loads(policies)
-            except (json.JSONDecodeError, TypeError) as exc:
-                return json.dumps(
-                    {
-                        "error": f"policies 파싱 실패: {str(exc)}",
-                        "policies_checked": 0,
-                    },
-                    ensure_ascii=False,
-                )
+        is_empty = policies is None or (isinstance(policies, list) and len(policies) == 0) or policies == ""
+        if is_all_mode or is_empty:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "policies='all'은 지원하지 않습니다. search_policies로 먼저 검색 후 정책 ID 리스트를 전달하세요.",
+                    "policies_checked": 0,
+                    "guide": "search_policies(query=키워드) → check_eligibility(policies=검색결과JSON) 순서로 호출하세요.",
+                },
+                ensure_ascii=False,
+            )
+
+        try:
+            policies_list = json.loads(policies)
+        except (json.JSONDecodeError, TypeError) as exc:
+            return json.dumps(
+                {
+                    "error": f"policies 파싱 실패: {str(exc)}",
+                    "policies_checked": 0,
+                },
+                ensure_ascii=False,
+            )
 
         if not isinstance(policies_list, list):
             return json.dumps(
@@ -330,7 +471,8 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
                 if isinstance(policy, dict) and _policy_matches_need(policy, user_needs)
             ]
 
-        results: list[dict[str, Any]] = []
+        eligible_results: list[dict[str, Any]] = []
+        ineligible_results: list[dict[str, Any]] = []
         for idx, policy_item in enumerate(policies_list):
             if not isinstance(policy_item, dict):
                 logger.warning(
@@ -348,17 +490,37 @@ def create_check_eligibility(policy_fetcher: PolicyFetcher) -> BaseTool:
             }
             is_eligible, reasons = _judge(details)
 
-            results.append(
-                {
-                    "policy_id": policy.get("policy_id", ""),
-                    "title": policy.get("title", ""),
-                    "apply_url": policy.get("apply_url", ""),
-                    "is_eligible": is_eligible,
-                    "reasons": reasons,
-                    "details": details,
-                }
-            )
+            _apply_end_date = policy.get("apply_end_date")
+            if isinstance(_apply_end_date, (date, datetime)):
+                _apply_end_date = _apply_end_date.isoformat()[:10]
+            elif not isinstance(_apply_end_date, str):
+                _apply_end_date = None
 
-        return json.dumps(results, ensure_ascii=False)
+            result = {
+                "policy_id": policy.get("policy_id") or policy.get("plcy_no") or "",
+                "title": policy.get("title") or policy.get("plcy_nm") or "",
+                "is_eligible": is_eligible,
+                "reasons": reasons,
+                # 응답 구조화(PolicyResult 조립)에 필요한 추가 필드
+                "apply_url": policy.get("apply_url") or "",
+                "detail_url": policy.get("detail_url") or "",
+                "category": policy.get("category") or policy.get("category_name") or "",
+                "summary": policy.get("summary") or "",
+                "apply_end_date": _apply_end_date,
+            }
+            if is_eligible is True:
+                result["_ranking_context"] = {
+                    "title": policy.get("title", ""),
+                    "summary": policy.get("summary", ""),
+                    "category": policy.get("category", ""),
+                    "category_name": policy.get("category_name", ""),
+                    "apply_end_date": policy.get("apply_end_date"),
+                }
+                eligible_results.append(result)
+            else:
+                ineligible_results.append(result)
+
+        ranked_eligible = _rank_eligible_policies(eligible_results, info)
+        return json.dumps(ranked_eligible + ineligible_results, ensure_ascii=False)
 
     return check_eligibility

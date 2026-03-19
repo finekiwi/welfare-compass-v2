@@ -42,7 +42,8 @@ def test_matching_policies_all_calls_fetcher():
     raw = tool.invoke({"policies": "all", "user_info": _user_info()})
 
     assert calls == [None]
-    assert json.loads(raw) == []
+    data = json.loads(raw)
+    assert "error" in data
 
 
 def test_matching_policies_all_policies_alias():
@@ -58,7 +59,8 @@ def test_matching_policies_all_policies_alias():
     raw = tool.invoke({"policies": "all_policies", "user_info": _user_info()})
 
     assert calls == [None]
-    assert json.loads(raw) == []
+    data = json.loads(raw)
+    assert "error" in data
 
 
 def test_matching_policies_all_returns_results():
@@ -111,7 +113,8 @@ def test_default_fetcher_returns_empty():
     )
 
     raw = check_eligibility_tool.invoke({"policies": "all", "user_info": _user_info()})
-    assert json.loads(raw) == []
+    data = json.loads(raw)
+    assert "error" in data
 
 
 def test_matching_policies_all_fetcher_exception_returns_error():
@@ -125,5 +128,5 @@ def test_matching_policies_all_fetcher_exception_returns_error():
     data = json.loads(raw)
 
     assert "error" in data
-    assert "policy fetch 실패" in data["error"]
+    assert "전체 정책 조회 실패" in data["error"]
     assert data["policies_checked"] == 0

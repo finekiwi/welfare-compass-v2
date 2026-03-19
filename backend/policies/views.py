@@ -16,6 +16,21 @@ from .services.matching import match_policies_for_web
 from .services.youth_api import get_youth_centers  # [BRAIN4-Map] 온통청년 API 서비스
 
 
+def _parse_pagination(request, default_page_size=12):
+    """페이지네이션 파라미터 파싱 (잘못된 값 방어)"""
+    try:
+        page = max(1, int(request.query_params.get('page', 1)))
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        page_size = max(1, min(int(request.query_params.get('page_size', default_page_size)), 100))
+    except (ValueError, TypeError):
+        page_size = default_page_size
+
+    return page, page_size
+
+
 class StandardResultsSetPagination(PageNumberPagination):
     """
     표준 페이지네이션 클래스
@@ -210,10 +225,19 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         """
         from .serializers import CalendarEventSerializer
 
-        # 파라미터 파싱
+        # 파라미터 파싱 + 입력 검증
         today = date.today()
-        year = int(request.query_params.get('year', today.year))
-        month = int(request.query_params.get('month', today.month))
+        try:
+            year = int(request.query_params.get('year', today.year))
+            month = int(request.query_params.get('month', today.month))
+        except (ValueError, TypeError):
+            return Response({"error": "year와 month는 정수여야 합니다."}, status=400)
+
+        if not (2000 <= year <= 2100):
+            return Response({"error": "year는 2000~2100 범위여야 합니다."}, status=400)
+        if not (1 <= month <= 12):
+            return Response({"error": "month는 1~12 범위여야 합니다."}, status=400)
+
         mode = request.query_params.get('mode', 'apply')
 
         # 해당 월의 시작일/종료일
@@ -284,16 +308,7 @@ class PolicyViewSet(viewsets.ReadOnlyModelViewSet):
         exclude_str = request.query_params.get('exclude', '')
         exclude_ids = [x.strip() for x in exclude_str.split(',') if x.strip()]
 
-        # 페이지네이션 파라미터 (잘못된 값 방어)
-        try:
-            page = max(1, int(request.query_params.get('page', 1)))
-        except (ValueError, TypeError):
-            page = 1
-
-        try:
-            page_size = max(1, min(int(request.query_params.get('page_size', 12)), 100))
-        except (ValueError, TypeError):
-            page_size = 12
+        page, page_size = _parse_pagination(request)
 
         # [BRAIN4-31] 전체 정책 매칭 (점수순 정렬됨)
         results = match_policies_for_web(
@@ -350,15 +365,7 @@ class CenterViewSet(viewsets.ViewSet):
     throttle_classes = [AnonRateThrottle]  # [FIX] 외부 API rate limit 방어
 
     def list(self, request):
-        try:
-            page = max(1, int(request.query_params.get('page', 1)))
-        except (ValueError, TypeError):
-            page = 1
-
-        try:
-            page_size = max(1, min(int(request.query_params.get('page_size', 10)), 100))
-        except (ValueError, TypeError):
-            page_size = 10
+        page, page_size = _parse_pagination(request, default_page_size=10)
 
         # 온통청년 API 호출
         data = get_youth_centers(page=page, size=page_size)

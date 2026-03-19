@@ -11,6 +11,7 @@ export function VerifyGate() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(true);
     const [hasPassword, setHasPassword] = useState(true);
+    const [hasSocialAccount, setHasSocialAccount] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
@@ -18,7 +19,10 @@ export function VerifyGate() {
         (async () => {
             try {
                 const profile = await getMyProfile();
-                if (mounted) setHasPassword(profile.hasPassword ?? true);
+                if (mounted) {
+                    setHasPassword(profile.hasPassword ?? true);
+                    setHasSocialAccount(profile.hasSocialAccount ?? false);
+                }
             } catch (err) {
                 console.error(err);
             } finally {
@@ -61,51 +65,50 @@ export function VerifyGate() {
 
     if (loading) return <div className="p-10 text-center">확인 중...</div>;
 
-    if (!hasPassword) {
-        return (
-            <div className="mx-auto max-w-md space-y-6 pt-10">
-                <h1 className="text-2xl font-bold">본인 확인</h1>
-                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <p className="mb-6 text-sm text-gray-600">
-                        소셜 로그인 계정입니다. 개인정보 보호를 위해 재인증(확인)을 진행합니다.
-                    </p>
-                    {error && <p className="mb-4 text-sm text-red-500">{error}</p>}
-                    <button
-                        onClick={handleSocialAuth}
-                        disabled={submitting}
-                        className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        {submitting ? "인증 처리 중..." : "인증하고 접근하기"}
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="mx-auto max-w-md space-y-6 pt-10">
             <h1 className="text-2xl font-bold">본인 확인</h1>
-            <p className="text-sm text-gray-500">개인정보 보호를 위해 비밀번호를 다시 입력해주세요.</p>
+            <p className="text-sm text-gray-500">개인정보 보호를 위해 본인 확인을 진행해주세요.</p>
+
+            {hasSocialAccount && (
+                <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <p className="mb-6 text-sm text-gray-600">
+                        소셜 로그인 계정은 소셜 인증으로 확인하는 것이 가장 빠릅니다.
+                    </p>
+                    <button
+                        onClick={handleSocialAuth}
+                        disabled={submitting}
+                        className="w-full rounded-lg bg-gray-600 px-4 py-3 font-semibold text-white hover:bg-gray-700 disabled:opacity-50"
+                    >
+                        {submitting ? "인증 처리 중..." : "소셜로 인증하기"}
+                    </button>
+                </div>
+            )}
 
             <form onSubmit={handleSubmit} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="mb-4">
+                <div className="mb-2">
                     <label className="mb-2 block text-sm font-medium text-gray-900">비밀번호</label>
                     <input
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:border-gray-500 focus:outline-none"
                         placeholder="비밀번호 입력"
                         required
                     />
                 </div>
+                {hasSocialAccount && (
+                    <p className="mb-4 text-xs text-gray-500">
+                        비밀번호가 있는 계정은 일반 재인증을 진행해야 합니다.
+                    </p>
+                )}
 
                 {error && <p className="mb-4 text-sm text-red-500">{error}</p>}
 
                 <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="w-full rounded-lg bg-gray-600 px-4 py-3 font-semibold text-white hover:bg-gray-700 disabled:opacity-50"
                 >
                     {submitting ? "확인 중..." : "확인"}
                 </button>

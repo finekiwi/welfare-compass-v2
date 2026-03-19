@@ -1,96 +1,112 @@
-// features/chatbot/ChatWindow.tsx
+﻿// features/chatbot/ChatWindow.tsx
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useChatbotStore } from "@/stores/chatbot.store";
+
 import { useAuthStore } from "@/stores/auth.store";
+import { useChatbotStore } from "@/stores/chatbot.store";
 import { useProfileStore } from "@/stores/profile.store";
-import { ChatMessageBubble } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
+import { JOB_STATUS_LABELS, HOUSING_TYPE_LABELS } from "./chatbot.labels";
+import { ChatMessageBubble } from "./ChatMessage";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 
-// 취업상태 라벨 매핑
-const JOB_STATUS_LABELS: Record<string, string> = {
-  employed: "재직중",
-  unemployed: "미취업",
-  job_seeking: "구직중",
-  student: "학생",
-  startup: "창업준비",
-  freelancer: "프리랜서",
-  other: "기타",
-};
+const SIDEBAR_BREAKPOINT = 700;
 
-export function ChatWindow() {
+export function ChatWindow({ panelWidth }: { panelWidth?: number }) {
   const messages = useChatbotStore((s) => s.messages);
+  const isLoading = useChatbotStore((s) => s.isLoading);
+  const hasProfileData = useChatbotStore((s) => s.hasProfileData);
+  const sendMessage = useChatbotStore((s) => s.sendMessage);
+  const ensureSession = useChatbotStore((s) => s.ensureSession);
+  const profileInjected = useChatbotStore((s) => s.profileInjected);
+  const setProfileInjected = useChatbotStore((s) => s.setProfileInjected);
+
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const profile = useProfileStore((s) => s.profile);
   const fetchProfile = useProfileStore((s) => s.fetchProfile);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 로그인 상태일 때만 프로필 불러오기
   useEffect(() => {
     if (isAuthenticated && !profile) {
       fetchProfile();
     }
   }, [isAuthenticated, profile, fetchProfile]);
 
-  // 새 메시지마다 하단으로 스크롤
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isLoading]);
 
-  // 소득 표시 포맷팅
-  const formatIncome = () => {
-    if (!profile) return "-";
-    if (profile.incomeAmount != null) {
-      return `월 ${profile.incomeAmount}만원`;
-    }
-    return "-";
-  };
+  const showSidebar = useMemo(() => {
+    if (!isAuthenticated) return false;
+    if (panelWidth == null) return true;
+    return panelWidth >= SIDEBAR_BREAKPOINT;
+  }, [isAuthenticated, panelWidth]);
 
-  // 나이 계산
-  const getAge = () => {
-    if (!profile || !profile.birthYear) return null;
+  const age = useMemo(() => {
+    if (!profile?.birthYear) return null;
     return new Date().getFullYear() - profile.birthYear;
-  };
+  }, [profile?.birthYear]);
 
   return (
-    <div className={`grid grid-cols-1 gap-4 p-5 ${isAuthenticated ? "md:grid-cols-[320px_1fr]" : ""}`}>
-      {/* 왼쪽: 사용자 정보 요약 (로그인 시에만 표시) */}
-      {isAuthenticated && <aside className="rounded-xl border bg-gray-50 p-4">
-        <div className="text-sm font-semibold">내 정보 요약</div>
-        <div className="mt-3 space-y-2 text-xs text-gray-700">
-          <Row
-            label="나이"
-            value={getAge() != null ? `만 ${getAge()}세` : "-"}
-          />
-          <Row
-            label="거주지"
-            value={profile?.district || "-"}
-          />
-          <Row
-            label="구직/재직"
-            value={profile?.jobStatus ? JOB_STATUS_LABELS[profile.jobStatus] || "-" : "-"}
-          />
-          <Row
-            label="소득"
-            value={formatIncome()}
-          />
-        </div>
+    <div className={`grid h-full grid-cols-1 gap-4 p-5 ${showSidebar ? "grid-cols-[320px_1fr]" : ""}`}>
+      {showSidebar && (
+        <aside className="overflow-y-auto rounded-lg border bg-gray-50 p-4">
+          <div className="text-sm font-semibold">내 정보 요약</div>
+          <div className="mt-3 space-y-2 text-xs text-gray-700">
+            <Row label="거주지" value={profile?.district || "-"} />
+            <Row label="나이" value={age != null ? `만 ${age}세` : "-"} />
+            <Row label="주거 형태" value={profile?.housingType ? HOUSING_TYPE_LABELS[profile.housingType] || "-" : "-"} />
+            <Row label="취업 상태" value={profile?.jobStatus ? JOB_STATUS_LABELS[profile.jobStatus] || "-" : "-"} />
+            <Row label="연 소득" value={profile?.incomeAmount != null ? `${profile.incomeAmount}만원` : "-"} />
+            <Row label="관심 분야" value={profile?.needs?.length ? profile.needs.join(", ") : "-"} />
+            <Row label="특수 조건" value={profile?.specialConditions?.length ? profile.specialConditions.join(", ") : "-"} />
+          </div>
 
-        <Link href="/mypage/profile">
-          <button className="mt-4 w-full rounded-xl border bg-white px-3 py-2 text-xs hover:bg-gray-100 transition">
+          <Link
+            href="/mypage/profile"
+            className="mt-4 block w-full rounded-xl border bg-white px-3 py-2 text-center text-xs transition hover:bg-gray-100"
+          >
             내정보 업데이트
-          </button>
-        </Link>
-      </aside>}
+          </Link>
+        </aside>
+      )}
 
-      {/* 오른쪽: 채팅 */}
-      <section className="flex h-[520px] flex-col rounded-xl border">
+      <section className="flex h-full min-h-0 flex-col rounded-lg border">
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {messages.map((m) => (
-            <ChatMessageBubble key={m.id} message={m} />
+          {messages.map((m, index) => (
+            <div key={m.id}>
+              <ChatMessageBubble message={m} />
+              {index === 0 && m.role === "assistant" && hasProfileData && (
+                <div className="ml-14 mt-2">
+                  <button
+                    type="button"
+                    disabled={profileInjected || isLoading}
+                    onClick={async () => {
+                      setProfileInjected(true);
+                      try {
+                        await ensureSession();
+                        await sendMessage("내 프로필 정보를 기반으로 맞춤 정책을 추천해주세요.", true);
+                      } catch {
+                        setProfileInjected(false);
+                      }
+                    }}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                      profileInjected
+                        ? "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400"
+                        : "cursor-pointer border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50"
+                    }`}
+                  >
+                    {profileInjected ? "✅ 내 정보가 반영되었습니다" : "내 정보 반영하기"}
+                  </button>
+                </div>
+              )}
+            </div>
           ))}
+
+          {isLoading && messages.length > 0 && <ThinkingIndicator />}
           <div ref={bottomRef} />
         </div>
 

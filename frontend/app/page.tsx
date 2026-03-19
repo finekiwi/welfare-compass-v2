@@ -1,21 +1,15 @@
 // app/page.tsx
-import { HeroBanner } from "@/features/home/HeroBanner";
 import { CategoryMenu } from "@/features/home/CategoryMenu";
-import { PriorityPolicyList } from "@/features/policy/PriorityPolicyList";
-import { ChatbotLauncher } from "@/features/chatbot/ChatbotLauncher";
+import { HomeLoginChatSection } from "@/features/home/HomeLoginChatSection";
 import { YouthPolicySection } from "@/features/policy/YouthPolicySection";
 
 export default function HomePage() {
-  // ✅ 메인 페이지는 "조립"만 담당(로직 최소화)
   return (
-    <div className="mx-auto w-full max-w-[1280px] px-4 py-8">
+    <div className="mx-auto w-full max-w-[1320px] px-4 py-4">
       <CategoryMenu />
-      <HeroBanner />
-      <PriorityPolicyList />
 
-      {/* ✅ ② 이미지처럼 메인 중간에 챗봇 런처 섹션 */}
-      <div className="my-10">
-        <ChatbotLauncher />
+      <div className="my-6 lg:my-8">
+        <HomeLoginChatSection />
       </div>
 
       <YouthPolicySection />

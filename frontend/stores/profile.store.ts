@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import type { MyProfile } from "@/features/mypage/mypage.types";
-import { getMyProfile, saveMyProfile } from "@/features/mypage/mypage.api";
+import { getMyProfile } from "@/features/mypage/mypage.api";
 
 interface ProfileState {
     profile: MyProfile | null;
@@ -37,17 +37,8 @@ export const useProfileStore = create<ProfileState>()(
         },
 
         updateProfile: async (profile: MyProfile) => {
-            set({ isLoading: true, error: null });
-            try {
-                await saveMyProfile(profile);
-                // 저장 후 최신 프로필로 store 업데이트
-                const latest = await getMyProfile();
-                set({ profile: latest, isLoading: false });
-            } catch (error) {
-                console.error("Failed to save profile:", error);
-                set({ error: "프로필 저장에 실패했습니다.", isLoading: false });
-                throw error;
-            }
+            // store 상태만 업데이트 (API 저장은 호출하는 쪽에서 이미 처리)
+            set({ profile, isLoading: false, error: null });
         },
 
         reset: () => {

@@ -16,10 +16,11 @@ export const chatbotApi = {
         sessionId: string,
         content: string,
         sessionToken?: string | null,
+        includeProfile?: boolean,
     ): Promise<SendMessageResponse> => {
         const { data } = await api.post<SendMessageResponse>(
             `${BASE_URL}/${sessionId}/send/`,
-            { content },
+            { content, include_profile: includeProfile || false },
             {
                 headers: sessionToken ? { [SESSION_TOKEN_HEADER]: sessionToken } : undefined,
             },

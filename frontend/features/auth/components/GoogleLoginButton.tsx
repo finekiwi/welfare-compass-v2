@@ -26,13 +26,20 @@ function GoogleLoginButtonContent() {
                 console.log("Google Code:", code); // 디버깅용
                 await loginWithGoogle(code);
 
-                // 로그인 성공 시 상태 업데이트
-                login();
+                // 로그인 성공 시 상태 업데이트 (await 필수 — 쿠키 검증 후 이동)
+                await login();
 
                 // 메인 페이지로 이동
                 router.push("/");
             } catch (error) {
                 console.error("Google Login Failed:", error);
+                const axiosError = error as any;
+                console.error("Google Login Failed Data JSON:", JSON.stringify(axiosError?.response?.data));
+                console.error("Google Login Failed Detail:", {
+                    status: axiosError?.response?.status,
+                    url: axiosError?.config?.url,
+                    data: axiosError?.response?.data,
+                });
                 alert("구글 로그인에 실패했습니다.");
             }
         },

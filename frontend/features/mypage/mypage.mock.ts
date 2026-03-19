@@ -4,7 +4,7 @@ import type { MyProfile, VerifyState } from "./mypage.types";
 export const MOCK_PROFILE: MyProfile = {
     // UI 표시용
     displayName: "복지나침반 사용자",
-    avatarUrl: "/images/beluga.png",
+    avatarUrl: "/logo/welfarecompass.png",
 
     // 기본 정보
     birthYear: 2000,           // 만 26세 (2026년 기준)

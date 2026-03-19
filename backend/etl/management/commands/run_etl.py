@@ -25,6 +25,7 @@ class Command(BaseCommand):
         parser.add_argument('--fetch-only', action='store_true', help='API → JSON 저장만')
         parser.add_argument('--load-only', action='store_true', help='JSON → DB 적재만')
         parser.add_argument('--region', type=str, default='11000', help='지역코드 (기본: 서울)')
+        parser.add_argument('--reindex', action='store_true', help='ETL 후 ChromaDB 재인덱싱')
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
@@ -70,6 +71,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(
                 f'ETL 완료: 생성 {result.created}, 수정 {result.updated}, 스킵 {result.skipped}'
             ))
+
+            if options['reindex']:
+                self.stdout.write('4. ChromaDB 재인덱싱 중...')
+                from llm.embeddings.vector_store import create_vector_db
+                create_vector_db(force_recreate=True)
+                self.stdout.write(self.style.SUCCESS('   ChromaDB 재인덱싱 완료'))
 
         except Exception as e:
             logger.exception('ETL 실패')

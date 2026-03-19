@@ -61,5 +61,8 @@ export const CATEGORY_COLORS: Record<string, CategoryColorSet> = {
 };
 
 export function getCategoryColor(category?: string): CategoryColorSet {
-    return CATEGORY_COLORS[category ?? ""] || CATEGORY_COLORS["default"];
+    if (!category) return CATEGORY_COLORS["default"];
+    // "주거,일자리" 등 다중 카테고리인 경우 첫 번째 값을 우선 사용
+    const firstCat = category.split(",")[0].trim();
+    return CATEGORY_COLORS[firstCat] || CATEGORY_COLORS["default"];
 }

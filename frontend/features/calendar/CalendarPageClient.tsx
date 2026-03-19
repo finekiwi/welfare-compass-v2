@@ -162,11 +162,11 @@ export function CalendarPageClient() {
                     return true;
                 }
 
-                const cat = ev.category || "기타";
+                const cats = (ev.category || "기타").split(",").map(s => s.trim());
                 return activeCats.some(c =>
-                    c === cat ||
-                    (c === "복지·문화" && cat === "복지문화") ||
-                    (c === "참여·권리" && cat === "참여권리")
+                    cats.includes(c) ||
+                    (c === "복지·문화" && cats.includes("복지문화")) ||
+                    (c === "참여·권리" && cats.includes("참여권리"))
                 );
             });
         }
@@ -236,7 +236,7 @@ export function CalendarPageClient() {
                     <button
                         type="button"
                         onClick={() => setMonth(startOfMonth(new Date()))}
-                        className="px-4 py-1.5 text-xs font-semibold text-gray-700 bg-white flex items-center justify-center transition-colors"
+                        className="px-3 text-xs font-semibold text-gray-700 bg-white flex items-center justify-center transition-colors cursor-pointer"
                         style={{ height: "36px" }}
                     >
                         today
@@ -445,7 +445,6 @@ export function CalendarPageClient() {
                 {/* ✅ 우측 사이드바 영역 */}
                 <aside className="w-[100px] shrink-0 flex flex-col gap-6 pt-1">
 
-                    {/* 기간 필터 그룹 */}
                     <div className="flex flex-col gap-2">
                         <button
                             type="button"
@@ -466,6 +465,13 @@ export function CalendarPageClient() {
                             onClick={() => setMode("biz")}
                         >
                             사업기간
+                        </button>
+                        <button
+                            type="button"
+                            className="h-[42px] mt-1 rounded-lg border flex items-center justify-center text-xs font-bold transition-colors bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                            onClick={() => router.push("/policy?apply_status=always")}
+                        >
+                            상시모집 보기
                         </button>
                     </div>
 

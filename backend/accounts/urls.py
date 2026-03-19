@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
     ProfileView, ScrapListView, ScrapDetailView, 
-    DeleteAccountView, CheckUsernameView, VerifyPasswordView, VerifySocialView
+    DeleteAccountView, CheckUsernameView, VerifyPasswordView, VerifySocialView,
+    ChangePasswordView
     # FindUsernameView,  <-- config/urls.py로 이동
     # SignupView, CustomLoginView, CustomRefreshView, LogoutView
 )
@@ -13,6 +14,7 @@ urlpatterns = [
     path('check-username/', CheckUsernameView.as_view(), name='check-username'),
     path('verify-password/', VerifyPasswordView.as_view(), name='verify-password'),
     path('verify-social/', VerifySocialView.as_view(), name='verify-social'),
+    path('password/change/', ChangePasswordView.as_view(), name='password-change'),
     
     # 프로필
     path('profile/', ProfileView.as_view(), name='profile'),

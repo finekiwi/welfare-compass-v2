@@ -62,6 +62,7 @@ class TestParseJsonResponse:
         assert result == _empty_result()
 
     def test_core_field_type_mismatch_fallback(self):
+        """age는 int|str 허용 (출생연도 패스스루), district는 str만 허용."""
         from llm.agents.tools.extract_info import _parse_json_response
 
         raw = json.dumps(
@@ -76,7 +77,8 @@ class TestParseJsonResponse:
             ensure_ascii=False,
         )
         result = _parse_json_response(raw)
-        assert result["age"] is None
+        # age: 문자열 "27"은 파싱 단계에서 통과 → _normalize_age()가 정수 27로 변환
+        assert result["age"] == "27"
         assert result["district"] is None
 
     def test_residence_field_accepted_as_district_fallback(self):

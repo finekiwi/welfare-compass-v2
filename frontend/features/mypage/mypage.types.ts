@@ -6,27 +6,28 @@
 
 // 취업 상태 (Backend: JOB_STATUS_CHOICES)
 export type JobStatus =
-    | "employed"      // 재직중
-    | "unemployed"    // 미취업
-    | "job_seeking"   // 구직중
-    | "student"       // 학생
-    | "startup"       // 창업준비
-    | "freelancer"    // 프리랜서
-    | "other";        // 기타
+    | "employed"       // 재직중 (API: 0013001)
+    | "self_employed"  // 자영업자 (API: 0013002)
+    | "unemployed"     // 미취업 (API: 0013003)
+    | "job_seeking"    // 구직중 (API: 0013003)
+    | "student"        // 학생 (API 없음 → 미취업 처리)
+    | "startup"        // 창업준비 (API: 0013006)
+    | "freelancer";    // 프리랜서 (API: 0013004)
 
 // 학력 상태 (Backend: EDUCATION_STATUS_CHOICES)
 export type EducationStatus =
-    | "enrolled"   // 재학
-    | "on_leave"   // 휴학
-    | "graduated"  // 졸업
-    | "dropout"    // 중퇴
-    | "other";     // 기타
+    | "below_high_school"     // 고졸 미만 (API: 0049001)
+    | "high_school_enrolled"  // 고교 재학 (API: 0049002)
+    | "high_school"           // 고졸 (API: 0049004)
+    | "university_enrolled"   // 대학 재학 (API: 0049005)
+    | "university_leave"      // 대학 휴학 (API 없음 → 재학 처리)
+    | "university"            // 대졸 (API: 0049007)
+    | "graduate_school";      // 석박사 (API: 0049008)
 
 // 혼인 상태 (Backend: MARRIAGE_STATUS_CHOICES)
 export type MarriageStatus =
-    | "single"   // 미혼
-    | "married"  // 기혼
-    | "other";   // 기타
+    | "single"   // 미혼 (API: 0055002)
+    | "married"; // 기혼 (API: 0055001)
 
 // 소득 수준 (Backend: INCOME_LEVEL_CHOICES)
 export type IncomeLevel =
@@ -38,22 +39,20 @@ export type IncomeLevel =
 // 주거 형태 (Backend: HOUSING_TYPE_CHOICES)
 export type HousingType =
     | "jeonse"   // 전세
-    | "monthly"  // 월세
-    | "owned"    // 자가
-    | "gosiwon"  // 고시원
-    | "parents"  // 부모님집
-    | "public"   // 공공임대
-    | "other";   // 기타
+    | "monthly"  // 월세 (고시원, 공공임대 포함)
+    | "owned";   // 자가 (부모님집 포함)
 
-// 특수 조건 (matching.py에서 사용하는 값)
+// 특수 조건 (matching_keys.py VALID_SPECIAL_CONDITIONS canonical 값)
 export type SpecialCondition =
     | "신혼"
     | "한부모"
     | "장애"
-    | "장애인"
+    | "다자녀"
+    | "저소득"
+    | "차상위"
     | "기초수급"
-    | "기초수급자"
-    | "수급자";
+    | "중소기업"
+    | "군인";
 
 // 관심/필요 분야 (대분류 카테고리)
 export type NeedCategory =
@@ -88,7 +87,7 @@ export type MyProfile = {
 
     // 소득/취업
     incomeLevel: IncomeLevel | "";      // 소득 수준
-    incomeAmount: number | null;        // 월 소득 (만원)
+    incomeAmount: number | null;        // 연 소득 (만원)
     jobStatus: JobStatus | "";          // 취업 상태
 
     // 학력
@@ -126,6 +125,7 @@ export type MyProfile = {
 
     // 패스워드 설정 여부 (소셜 로그인 등 판별)
     hasPassword?: boolean;
+    hasSocialAccount?: boolean;
 };
 
 // =========================================================================

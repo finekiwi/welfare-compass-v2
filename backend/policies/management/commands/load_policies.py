@@ -156,7 +156,7 @@ class Command(BaseCommand):
             is_for_low_income = SBIZ_CODE_LOW_INCOME in sbiz_cd
 
             # 신혼부부: 텍스트 파싱 (API 코드 없음)
-            policy_text = f"{item.get('plcyExplnCn', '')} {item.get('plcySprtCn', '')}"
+            policy_text = f"{item.get('plcyNm', '')} {item.get('plcyExplnCn', '')} {item.get('plcySprtCn', '')}"
             is_for_newlywed = _is_newlywed_exclusive(policy_text)
 
             # 통계 업데이트

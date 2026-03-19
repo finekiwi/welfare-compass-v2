@@ -5,10 +5,76 @@ import type { PolicyCardItem } from "./policy.types";
 import { POLICY_CATEGORY_IMAGE } from "./policy.images";
 import { getCategoryLabel } from "./policy.constants";
 
-export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
+export function PolicyCard({ policy, viewMode = "grid" }: { policy: PolicyCardItem, viewMode?: "grid" | "list" }) {
   // ✅ 3단계 이미지 fallback: 포스터 → 카테고리 기본 → 최종 fallback
   const posterUrl = policy.posterUrl; // 관리자 업로드 포스터
   const categoryImg = POLICY_CATEGORY_IMAGE[policy.category] ?? "/images/policy/care-protection.png";
+
+  if (viewMode === "list") {
+    return (
+      <Link
+        href={`/policy/${policy.id}`}
+        className="flex flex-col sm:flex-row overflow-hidden rounded border border-gray-300 bg-white transition-colors hover:bg-gray-50 h-auto sm:h-36"
+      >
+        {/* ✅ (A) 이미지 영역 (좌측 고정 너비) */}
+        <div className="relative aspect-[4/3] sm:aspect-auto sm:w-48 shrink-0 bg-gray-100 border-b sm:border-b-0 sm:border-r border-gray-200">
+          {posterUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={posterUrl}
+              alt={`${getCategoryLabel(policy.category)} 포스터`}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <Image
+              src={categoryImg}
+              alt={`${getCategoryLabel(policy.category)} 대표 이미지`}
+              fill
+              className="object-cover"
+              priority={false}
+            />
+          )}
+
+          <div className="absolute top-2 left-2">
+            <span className="rounded bg-black/60 px-2 py-0.5 text-[10px] text-white backdrop-blur-sm">
+              {policy.region}
+            </span>
+          </div>
+        </div>
+
+        {/* ✅ (B) 텍스트 및 정보 영역 (우측 확장) */}
+        <div className="flex flex-1 flex-col p-4 justify-between">
+          <div>
+            {/* 1. 모집상태 + 카테고리 */}
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 text-[13px] font-medium">
+              {renderStatusBadge(policy.applyStartDate, policy.applyEndDate)}
+              {(() => {
+                const rawCats = policy.categories?.length ? policy.categories : [policy.category];
+                const cats = rawCats.flatMap((c) => (c || "").split(",")).map((c) => c.trim()).filter(Boolean);
+                return cats.map((cat, idx) => (
+                  <span key={`${cat}-${idx}`} className="text-gray-500 font-semibold">{getCategoryLabel(cat)}</span>
+                ));
+              })()}
+            </div>
+
+            {/* 2. 정책 제목 */}
+            <h3 className="line-clamp-1 text-[17px] font-bold tracking-tight text-gray-900 group-hover:text-blue-600 transition-colors">
+              {policy.title}
+            </h3>
+            
+            {/* 3. 설명 (리스트 뷰 전용) */}
+            <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-gray-500">
+              {policy.summary || policy.content || "상세 내용을 확인해 보세요."}
+            </p>
+          </div>
+          
+          <div className="mt-2 flex justify-end">
+             <span className="text-[11px] font-semibold text-blue-600 hover:underline">상세보기 &rarr;</span>
+          </div>
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <Link
@@ -23,9 +89,13 @@ export function PolicyCard({ policy }: { policy: PolicyCardItem }) {
         {/* 1. 모집상태 + 카테고리 (한 줄) */}
         <div className="mb-2 flex flex-wrap items-center gap-x-2 text-[13px] font-medium">
           {renderStatusBadge(policy.applyStartDate, policy.applyEndDate)}
-          {(policy.categories?.length ? policy.categories : [policy.category]).map((cat) => (
-            <span key={cat} className="text-gray-500">{getCategoryLabel(cat)}</span>
-          ))}
+          {(() => {
+            const rawCats = policy.categories?.length ? policy.categories : [policy.category];
+            const cats = rawCats.flatMap((c) => (c || "").split(",")).map((c) => c.trim()).filter(Boolean);
+            return cats.map((cat, idx) => (
+              <span key={`${cat}-${idx}`} className="text-gray-500">{getCategoryLabel(cat)}</span>
+            ));
+          })()}
         </div>
 
         {/* 2. 정책 제목 */}

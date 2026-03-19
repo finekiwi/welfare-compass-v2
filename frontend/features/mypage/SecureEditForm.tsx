@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { clearVerified, getMyProfile, getVerifyState, saveMyProfile } from "./mypage.api";
+import { getMyProfile, getVerifyState, saveMyProfile } from "./mypage.api";
 import type { MyProfile } from "./mypage.types";
 import { api } from "@/services/axios";
 
@@ -14,17 +14,40 @@ export function SecureEditForm() {
     const [verified, setVerifiedState] = useState<boolean | null>(null);
     const [reauthToken, setReauthToken] = useState<string | undefined>(undefined);
     const [form, setForm] = useState<MyProfile | null>(null);
+    const [isSavingNotifications, setIsSavingNotifications] = useState(false);
+    const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
 
-    // 비밀번호는 목업이라 실제 저장 X (UI만)
-    const [currentPw, setCurrentPw] = useState("");
+    // 비밀번호 변경
     const [newPw, setNewPw] = useState("");
     const [newPw2, setNewPw2] = useState("");
+    const [pwError, setPwError] = useState("");
+    const [pwSuccess, setPwSuccess] = useState("");
+    const [isChangingPw, setIsChangingPw] = useState(false);
 
     // 회원탈퇴
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deletePw, setDeletePw] = useState("");
     const [deleteError, setDeleteError] = useState("");
     const [isDeleting, setIsDeleting] = useState(false);
+    const newPwTooShort = newPw.length > 0 && newPw.length < 8;
+    const newPwMismatch = newPw2.length > 0 && newPw !== newPw2;
+    const newPwHasLetter = /[a-zA-Z]/.test(newPw);
+    const newPwHasNumber = /[0-9]/.test(newPw);
+    const newPwHasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPw);
+    const newPwRuleInvalid = newPw.length > 0 && (!newPwHasLetter || !newPwHasNumber || !newPwHasSpecial);
+
+    const translatePasswordError = (message: string) => {
+        const mappings: Array<[RegExp, string]> = [
+            [/too common/i, "너무 흔한 비밀번호입니다."],
+            [/too short/i, "비밀번호는 8자 이상이어야 합니다."],
+            [/entirely numeric/i, "숫자로만 된 비밀번호는 사용할 수 없습니다."],
+            [/too similar/i, "개인정보와 비슷한 비밀번호는 사용할 수 없습니다."],
+        ];
+        for (const [pattern, translated] of mappings) {
+            if (pattern.test(message)) return translated;
+        }
+        return message;
+    };
 
     useEffect(() => {
         (async () => {
@@ -43,20 +66,101 @@ export function SecureEditForm() {
         return <div className="rounded-2xl border bg-white p-6 text-sm text-gray-600">확인 중...</div>;
     }
 
-    // replace로 보내서 여기 도착하면 거의 verified=true 상태
     if (!form) return null;
 
-    async function onSave() {
-        if (!form) return; // ✅ null이면 저장하지 않음(가드)
-        await saveMyProfile(form, reauthToken);
-        // 인증은 보통 "일회성"으로 처리하는 경우가 많아서 저장 후 해제
-        await clearVerified();
-        router.push("/mypage");
+    async function handleSaveNotifications() {
+        if (!form) {
+            setNotificationMessage("프로필 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
+            return;
+        }
+        if (!reauthToken) {
+            setNotificationMessage("재인증 정보가 없습니다. 다시 인증해주세요.");
+            return;
+        }
+        setIsSavingNotifications(true);
+        setNotificationMessage(null);
+        try {
+            await saveMyProfile(form, reauthToken);
+            setNotificationMessage("알림 설정이 저장되었습니다.");
+        } catch (error: any) {
+            const status = error.response?.status;
+            if (status === 403) {
+                setNotificationMessage("재인증이 만료되었습니다. 다시 인증해주세요.");
+                router.replace("/mypage/verify");
+                return;
+            }
+            const msg = error.response?.data?.detail || "알림 설정 저장에 실패했습니다.";
+            setNotificationMessage(msg);
+        } finally {
+            setIsSavingNotifications(false);
+        }
+    }
+
+    async function handleChangePassword() {
+        setPwError("");
+        setPwSuccess("");
+
+        if (!newPw.trim()) {
+            setPwError("새 비밀번호를 입력해주세요.");
+            return;
+        }
+        if (newPw.length < 8) {
+            setPwError("새 비밀번호는 8자 이상이어야 합니다.");
+            return;
+        }
+        if (newPw !== newPw2) {
+            setPwError("새 비밀번호가 일치하지 않습니다.");
+            return;
+        }
+
+        if (!reauthToken) {
+            setPwError("재인증 정보가 없습니다. 다시 인증해주세요.");
+            router.replace("/mypage/verify");
+            return;
+        }
+
+        setIsChangingPw(true);
+        try {
+            await api.post("/api/accounts/password/change/", {
+                new_password1: newPw,
+                new_password2: newPw2,
+            }, {
+                headers: { "X-Reauth-Token": reauthToken },
+            });
+            setPwSuccess("비밀번호가 성공적으로 변경되었습니다.");
+            setNewPw("");
+            setNewPw2("");
+        } catch (error: any) {
+            const data = error.response?.data;
+            const status = error.response?.status;
+            if (status === 403) {
+                setPwError("재인증이 만료되었습니다. 다시 인증해주세요.");
+                router.replace("/mypage/verify");
+                return;
+            }
+            if (data?.error) {
+                setPwError(translatePasswordError(String(data.error)));
+                return;
+            }
+            if (data) {
+                const messages = Object.values(data).flat().map((msg) => translatePasswordError(String(msg))).join(" ");
+                setPwError(messages || "비밀번호 변경에 실패했습니다.");
+                return;
+            }
+            setPwError("비밀번호 변경에 실패했습니다.");
+        } finally {
+            setIsChangingPw(false);
+        }
     }
 
     async function handleDeleteAccount() {
         if (!deletePw.trim()) {
-            setDeleteError("비밀번호를 입력해주세요.");
+            setDeleteError("\uBE44\uBC00\uBC88\uD638\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.");
+            return;
+        }
+        if (!reauthToken) {
+            setDeleteError("\uC7AC\uC778\uC99D \uC815\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC778\uC99D\uD574\uC8FC\uC138\uC694.");
+            router.replace("/mypage/verify");
             return;
         }
 
@@ -66,16 +170,18 @@ export function SecureEditForm() {
         try {
             await api.delete("/api/accounts/delete/", {
                 data: { password: deletePw },
-                headers: reauthToken ? { "X-Reauth-Token": reauthToken } : {}
+                headers: { "X-Reauth-Token": reauthToken },
             });
 
-            // 삭제 성공 → 토큰 삭제 및 메인으로 이동
-            // 토큰은 이제 쿠키로 관리되므로 localStorage 접근 불필요
-            // useAuthStore의 logout이 상태를 초기화함
-            alert("회원탈퇴가 완료되었습니다. 이용해주셔서 감사합니다.");
+            alert("\uD68C\uC6D0\uD0C8\uD1F4\uAC00 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uC774\uC6A9\uD574\uC8FC\uC154\uC11C \uAC10\uC0AC\uD569\uB2C8\uB2E4.");
             window.location.href = "/";
         } catch (error: any) {
-            const message = error.response?.data?.error || "회원탈퇴에 실패했습니다.";
+            if (error.response?.status === 403) {
+                setDeleteError("\uC7AC\uC778\uC99D\uC774 \uB9CC\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC778\uC99D\uD574\uC8FC\uC138\uC694.");
+                router.replace("/mypage/verify");
+                return;
+            }
+            const message = error.response?.data?.error || "\uD68C\uC6D0\uD0C8\uD1F4\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.";
             setDeleteError(message);
         } finally {
             setIsDeleting(false);
@@ -90,98 +196,164 @@ export function SecureEditForm() {
             <div className="rounded-2xl bg-gray-50 p-5 text-sm text-gray-600">
                 <ul className="list-disc space-y-1 pl-5">
                     <li>중요 개인정보는 신중히 취급하며, 인증 이후에만 변경 가능합니다.</li>
-                    <li>현재는 목업 화면으로 저장 시 로컬에만 반영됩니다.</li>
                 </ul>
             </div>
 
-            {/* 개인정보 */}
-            <section className="rounded-2xl border bg-white p-6">
+            {/* 개인정보 (읽기전용) */}
+            <section className="border-t border-gray-200 bg-white px-6 pt-6">
                 <div className="mb-4 text-lg font-bold">개인회원정보</div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                    <label className="block">
-                        <div className="mb-1 text-xs text-gray-600">성명</div>
-                        <div className="flex gap-2">
+                    {form.hasPassword && (
+                        <label className="block">
+                            <div className="mb-1 text-xs text-gray-600">아이디(로그인용)</div>
                             <input
-                                value={form.displayName}
-                                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-                                className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
+                                value={form.displayName || "-"}
+                                readOnly
+                                className="h-11 w-full rounded-lg border bg-gray-50 px-3 text-sm text-gray-500 outline-none cursor-not-allowed"
                             />
-                            <button type="button" className="h-11 rounded-lg bg-gray-900 px-3 text-xs font-semibold text-white">
-                                성명 변경하기
-                            </button>
-                        </div>
-                    </label>
+                        </label>
+                    )}
 
                     <label className="block">
-                        <div className="mb-1 text-xs text-gray-600">휴대전화번호</div>
-                        <div className="flex gap-2">
-                            <input
-                                value={form.phone}
-                                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                                className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                            />
-                            <button type="button" className="h-11 rounded-lg bg-gray-900 px-3 text-xs font-semibold text-white">
-                                휴대전화번호 변경하기
-                            </button>
-                        </div>
-                    </label>
-
-                    <label className="block md:col-span-2">
                         <div className="mb-1 text-xs text-gray-600">이메일</div>
-                        <div className="flex gap-2">
+                        <input
+                            value={form.email || "-"}
+                            readOnly
+                            className="h-11 w-full rounded-lg border bg-gray-50 px-3 text-sm text-gray-500 outline-none cursor-not-allowed"
+                        />
+                    </label>
+
+                </div>
+            </section>
+
+            {/* 정책 알림 설정 */}
+            <section className="border-b border-gray-200 bg-white px-6 pb-6">
+                <div className="mb-4 text-lg font-bold">📬 정책 알림 설정</div>
+                <div className="space-y-4">
+                    <label className="block">
+                        <div className="mb-1 text-xs text-gray-600">알림받을 이메일 주소</div>
+                        <input
+                            type="email"
+                            value={form.notificationEmail ?? form.email ?? ""}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    notificationEmail: e.target.value || null,
+                                })
+                            }
+                            placeholder="example@email.com"
+                            className="h-11 w-full max-w-md rounded-lg border px-3 text-sm outline-none focus:border-blue-800"
+                        />
+                    </label>
+
+                    <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={form.emailNotificationEnabled ?? false}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    emailNotificationEnabled: e.target.checked,
+                                })
+                            }
+                            className="mt-1 h-4 w-4 rounded border-gray-300"
+                        />
+                        <div>
+                            <span className="text-sm font-semibold">정책정보 알림 수신 동의</span>
+                            <p className="text-sm text-gray-600 mt-1">
+                                새로운 정책이 등록되면 회원님의 프로필과 매칭되는 정책을 이메일로 알려드립니다.
+                            </p>
+                        </div>
+                    </label>
+
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={handleSaveNotifications}
+                            disabled={isSavingNotifications}
+                            className="rounded-lg bg-blue-800 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {isSavingNotifications ? "저장 중..." : "알림 설정 저장"}
+                        </button>
+                        {notificationMessage && (
+                            <span className="text-sm text-gray-600">{notificationMessage}</span>
+                        )}
+                    </div>
+                </div>
+            </section>
+
+            {form.hasPassword ? (
+                <section className="border-b border-gray-200 bg-white px-6 pb-6">
+                    <div className="mb-4 text-lg font-bold">비밀번호 재설정</div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+
+                        <label className="block md:col-span-2">
+                            <div className="mb-1 text-xs text-gray-600">기존 비밀번호</div>
                             <input
-                                value={form.email}
-                                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                value="재인증 완료"
+                                readOnly
+                                className="h-11 w-full rounded-lg border bg-gray-50 px-3 text-sm text-gray-500 outline-none cursor-not-allowed"
+                            />
+                        </label>
+
+                        <label className="block">
+                            <div className="mb-1 text-xs text-gray-600">새 비밀번호</div>
+                            <input
+                                type="password"
+                                value={newPw}
+                                onChange={(e) => { setNewPw(e.target.value); setPwError(""); }}
+                                placeholder="8자 이상"
                                 className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
                             />
-                        </div>
-                    </label>
-                </div>
-            </section>
+                            {newPwTooShort ? (
+                                <div className="mt-1 text-[11px] text-red-500">8자 이상 입력해주세요.</div>
+                            ) : null}
+                            {newPwRuleInvalid ? (
+                                <div className="mt-1 text-[11px] text-red-500">영문, 숫자, 특수문자를 모두 포함해주세요.</div>
+                            ) : null}
+                        </label>
 
-            {/* 비밀번호 재설정 */}
-            <section className="rounded-2xl border bg-white p-6">
-                <div className="mb-4 text-lg font-bold">비밀번호 재설정</div>
+                        <label className="block">
+                            <div className="mb-1 text-xs text-gray-600">새 비밀번호 확인</div>
+                            <input
+                                type="password"
+                                value={newPw2}
+                                onChange={(e) => { setNewPw2(e.target.value); setPwError(""); }}
+                                className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
+                            />
+                            {newPwMismatch ? (
+                                <div className="mt-1 text-[11px] text-red-500">비밀번호가 일치하지 않습니다.</div>
+                            ) : null}
+                        </label>
+                    </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                    <label className="block md:col-span-2">
-                        <div className="mb-1 text-xs text-gray-600">기존 비밀번호</div>
-                        <input
-                            type="password"
-                            value={currentPw}
-                            onChange={(e) => setCurrentPw(e.target.value)}
-                            className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                        />
-                        <div className="mt-1 text-[11px] text-gray-500">
-                            영문(대/소문자), 숫자, 특수문자 중 3가지 이상 조합하여 9~24자 이내
-                        </div>
-                    </label>
+                    {pwError && (
+                        <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-600">{pwError}</div>
+                    )}
+                    {pwSuccess && (
+                        <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-600">{pwSuccess}</div>
+                    )}
 
-                    <label className="block">
-                        <div className="mb-1 text-xs text-gray-600">새 비밀번호</div>
-                        <input
-                            type="password"
-                            value={newPw}
-                            onChange={(e) => setNewPw(e.target.value)}
-                            className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                        />
-                    </label>
+                    <button
+                        type="button"
+                        onClick={handleChangePassword}
+                        disabled={isChangingPw || !newPw || !newPw2 || newPwTooShort || newPwMismatch || newPwRuleInvalid}
+                        className="mt-4 rounded-lg bg-blue-800 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                        {isChangingPw ? "처리 중..." : "비밀번호 변경"}
+                    </button>
+                </section>
+            ) : (
+                <section className="border-b border-gray-200 bg-white px-6 pb-6">
+                    <div className="mb-2 text-lg font-bold">비밀번호</div>
+                    <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">
+                        소셜 로그인 전용 계정입니다. 비밀번호 로그인은 지원하지 않습니다.
+                    </div>
+                </section>
+            )}
 
-                    <label className="block">
-                        <div className="mb-1 text-xs text-gray-600">새 비밀번호 확인</div>
-                        <input
-                            type="password"
-                            value={newPw2}
-                            onChange={(e) => setNewPw2(e.target.value)}
-                            className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                        />
-                        {newPw && newPw2 && newPw !== newPw2 ? (
-                            <div className="mt-1 text-[11px] text-red-500">비밀번호가 일치하지 않습니다.</div>
-                        ) : null}
-                    </label>
-                </div>
-            </section>
 
             {/* 회원탈퇴 */}
             <section className="rounded-2xl border border-red-100 bg-red-50/30 p-6">
@@ -253,14 +425,6 @@ export function SecureEditForm() {
                 <Link href="/mypage" className="rounded-lg border px-4 py-2 text-sm">
                     이전으로
                 </Link>
-
-                <button
-                    type="button"
-                    onClick={onSave}
-                    className="rounded-lg bg-blue-800 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                >
-                    수정하기
-                </button>
             </div>
         </div>
     );

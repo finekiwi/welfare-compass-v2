@@ -84,11 +84,11 @@ export const useAuthStore = create<AuthState>()(
         },
 
         // [보안] 인터셉터에서 호출하는 상태 정리 전용 (서버 호출 없음 → 재귀 불가)
+        // 참고: chatbot은 익명 세션도 있으므로 여기서 리셋하지 않음 (logout에서만 리셋)
         clearAuth: () => {
             localStorage.removeItem("welfarecompass:mypage_profile");
             localStorage.removeItem("welfarecompass:verify_state");
             useProfileStore.getState().reset();
-            useChatbotStore.getState().reset();
             set({ isAuthenticated: false });
         },
     }))

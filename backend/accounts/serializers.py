@@ -140,6 +140,56 @@ class ProfileSerializer(serializers.ModelSerializer):
                     )
         return value
 
+
+class ProfilePreferencesSerializer(serializers.ModelSerializer):
+    """정책 매칭 정보(비민감 필드) 수정 전용 Serializer"""
+    interests = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Profile.interests.field.related_model.objects.all(),
+        required=False
+    )
+
+    class Meta:
+        model = Profile
+        fields = [
+            'birth_year', 'district', 'income_level', 'income_amount',
+            'job_status', 'education_status', 'marriage_status',
+            'housing_type', 'household_size',
+            'has_children', 'children_ages',
+            'special_conditions', 'needs',
+            'interests',
+        ]
+
+    def validate_children_ages(self, value):
+        """자녀 나이 유효성 검사"""
+        if value:
+            if not isinstance(value, list):
+                raise serializers.ValidationError("자녀 나이는 리스트 형태여야 합니다.")
+            for age in value:
+                if not isinstance(age, int) or age < 0 or age > 30:
+                    raise serializers.ValidationError("자녀 나이는 0-30 사이의 정수여야 합니다.")
+        return value
+
+    def validate_special_conditions(self, value):
+        """
+        특수조건 유효성 검사
+
+        [BRAIN4-31] 변경사항:
+        - '중소기업', '군인' 추가: API sbizCd에 해당 코드 존재
+          - 0014001: 중소기업 (8개 정책)
+          - 0014007: 군인 (8개 정책)
+        - matching.py에서 sbiz_cd 필터링 시 사용
+        """
+        if value:
+            if not isinstance(value, list):
+                raise serializers.ValidationError("특수조건은 리스트 형태여야 합니다.")
+            for cond in value:
+                if cond not in VALID_SPECIAL_CONDITIONS:
+                    raise serializers.ValidationError(
+                        f"유효하지 않은 특수조건: {cond}. 가능한 값: {VALID_SPECIAL_CONDITIONS}"
+                    )
+        return value
+
 class ScrapSerializer(serializers.ModelSerializer):
     policy = PolicyListSerializer(read_only=True)
     

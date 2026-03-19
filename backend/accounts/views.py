@@ -2,21 +2,23 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model, update_session_auth_hash
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponseRedirect # [추가] 리다이렉트를 위한 임포트
 from policies.models import Policy
 from .serializers import (
-    ProfileSerializer, ScrapSerializer
+    ProfileSerializer, ProfilePreferencesSerializer, ScrapSerializer
 )
 from .models import Profile, Scrap
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
 import os # [추가] 환경변수 접근용
 from django.conf import settings
 import logging
-from .permissions import IsReauthenticated
+from .permissions import IsReauthenticated, blacklist_reauth_token
 from django.core.signing import TimestampSigner
+from allauth.socialaccount.models import SocialAccount
 
 # Google Login Imports
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
@@ -25,8 +27,7 @@ from dj_rest_auth.registration.views import SocialLoginView
 
 # [추가] 아이디 찾기를 위한 임포트
 from django.core.mail import send_mail
-from django.conf import settings
-from rest_framework.views import APIView
+
 
 # [추가] 계정 잠금 (dj-rest-auth LoginView 커스텀)
 from dj_rest_auth.views import LoginView as DjRestAuthLoginView
@@ -39,6 +40,8 @@ import json
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+import requests
+from dj_rest_auth.views import PasswordResetView # [추가] 부모 클래스 임포트
 
 
 @csrf_exempt
@@ -150,24 +153,62 @@ class AxesLockedLoginView(DjRestAuthLoginView):
 
         return response
 
+class LeewayGoogleOAuth2Adapter(GoogleOAuth2Adapter):
+    """GoogleOAuth2Adapter + clock skew tolerance (leeway).
+
+    WSL2 등 가상 환경에서 호스트-게스트 간 시계 미세 차이로
+    ImmatureSignatureError(iat가 미래)가 간헐적으로 발생하는 것을 방지합니다.
+    """
+
+    def _decode_id_token(self, app, id_token):
+        import jwt as pyjwt
+        from allauth.socialaccount.providers.google.views import (
+            CERTS_URL, ID_TOKEN_ISSUER,
+        )
+        from allauth.socialaccount.internal import jwtkit
+        from allauth.socialaccount.providers.oauth2.client import OAuth2Error
+
+        verify_signature = not self.did_fetch_access_token
+        try:
+            if verify_signature:
+                alg, key = jwtkit.fetch_key(
+                    id_token, CERTS_URL, jwtkit.lookup_kid_pem_x509_certificate,
+                )
+                algorithms = [alg]
+            else:
+                key = ""
+                algorithms = None
+
+            data = pyjwt.decode(
+                id_token,
+                key=key,
+                options={
+                    "verify_signature": verify_signature,
+                    "verify_iss": True,
+                    "verify_aud": True,
+                    "verify_exp": True,
+                },
+                issuer=ID_TOKEN_ISSUER,
+                audience=app.client_id,
+                algorithms=algorithms,
+                leeway=10,  # 10초 clock skew 허용
+            )
+            jwtkit.verify_jti(data)
+            return data
+        except pyjwt.PyJWTError as e:
+            raise OAuth2Error("Invalid id_token") from e
+
+
 class GoogleLogin(SocialLoginView):
     """
     구글 로그인 API
-    
+
     프론트엔드에서 구글 로그인 후 받은 'code'를 이 API로 보내면,
     백엔드가 구글과 통신하여 제 3자 인증을 완료하고 JWT 토큰을 발급합니다.
     """
-    adapter_class = GoogleOAuth2Adapter
-    callback_url = "postmessage" # 프론트엔드 Popup Flow(postmessage) 사용 시 필수
+    adapter_class = LeewayGoogleOAuth2Adapter
+    callback_url = "postmessage"
     client_class = OAuth2Client
-
-    def post(self, request, *args, **kwargs):
-        print("DEBUG: GoogleLogin POST received")
-        try:
-            return super().post(request, *args, **kwargs)
-        except Exception as e:
-            logger.error(f"Google Login Exception: {e}", exc_info=True)
-            return Response({"error": "구글 로그인 처리에 실패했습니다. 잠시 후 다시 시도해주세요."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # class SignupView(generics.CreateAPIView):
@@ -258,26 +299,33 @@ class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = ProfileSerializer(request.user.profile)
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        serializer = ProfileSerializer(profile)
         # 소셜 로그인 사용자인 경우 등을 위해 패스워드 설정 여부(has_usable_password)를 포함
         has_password = request.user.has_usable_password()
+        has_social_account = SocialAccount.objects.filter(user=request.user).exists()
         data = serializer.data
         data['has_password'] = has_password
+        data['has_social_account'] = has_social_account
         return Response(data)
 
     def put(self, request):
-        self.permission_classes = [IsAuthenticated, IsReauthenticated]
+        self.permission_classes = [IsAuthenticated]
         self.check_permissions(request)
-        serializer = ProfileSerializer(request.user.profile, data=request.data)
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        serializer = ProfileSerializer(profile, data=request.data)
         if serializer.is_valid():
             serializer.save()
+            token = request.headers.get('X-Reauth-Token')
+            if token:
+                blacklist_reauth_token(token)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def patch(self, request):
-        self.permission_classes = [IsAuthenticated, IsReauthenticated]
-        self.check_permissions(request)
-        serializer = ProfileSerializer(request.user.profile, data=request.data, partial=True)
+        """비민감 프로필 필드 수정 (정책 매칭 정보) - 재인증 불필요"""
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+        serializer = ProfilePreferencesSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -342,6 +390,9 @@ class DeleteAccountView(APIView):
         # 비밀번호가 없는 사용자(소셜 로그인)는 VerifySocialView를 통해 발급받은
         # reauth_token이 IsReauthenticated를 통해 검증된 상태임. 바로 탈퇴 진행.
 
+        token = request.headers.get('X-Reauth-Token')
+        if token:
+            blacklist_reauth_token(token)
         user.delete()
         return Response({"message": "회원탈퇴가 완료되었습니다."}, status=status.HTTP_200_OK)
 
@@ -393,14 +444,14 @@ class VerifySocialView(APIView):
 
     def post(self, request):
         user = request.user
-        
-        if user.has_usable_password():
+        has_social = SocialAccount.objects.filter(user=user).exists()
+        if not has_social:
             return Response(
-                {"error": "비밀번호가 있는 계정입니다. 일반 재인증을 진행하세요."},
+                {"error": "소셜 계정이 연결되어 있지 않습니다."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
-        # 소셜 로그인 사용자는 비밀번호 검증 없이 토큰 발급
+
+        # 소셜 로그인 계정이면 소셜 재인증 허용 (비밀번호 존재 여부와 무관)
         signer = TimestampSigner()
         token = signer.sign(str(user.id))
         
@@ -408,6 +459,57 @@ class VerifySocialView(APIView):
             "message": "소셜 계정 인증에 성공했습니다.",
             "reauth_token": token
         }, status=status.HTTP_200_OK)
+
+
+class ChangePasswordView(APIView):
+    """
+    재인증 토큰 기반 비밀번호 변경
+    POST /api/accounts/password/change/
+    """
+    permission_classes = [IsAuthenticated, IsReauthenticated]
+
+    def post(self, request):
+        new_password1 = request.data.get('new_password1')
+        new_password2 = request.data.get('new_password2')
+
+        if not new_password1 or not new_password2:
+            return Response(
+                {"error": "새 비밀번호를 입력해주세요."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_password1 != new_password2:
+            return Response(
+                {"error": "새 비밀번호가 일치하지 않습니다."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            validate_password(new_password1, request.user)
+        except ValidationError as e:
+            return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        request.user.set_password(new_password1)
+        request.user.save()
+        update_session_auth_hash(request, request.user)
+
+        # 사용된 reauth 토큰 블랙리스트 등록 (재사용 방지)
+        token = request.headers.get('X-Reauth-Token')
+        if token:
+            blacklist_reauth_token(token)
+
+        return Response({"message": "비밀번호가 변경되었습니다."}, status=status.HTTP_200_OK)
+
+
+class DisabledPasswordChangeView(APIView):
+    """
+    구형 dj-rest-auth 비밀번호 변경 엔드포인트 차단용
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         
 
 # class CustomLoginView(TokenObtainPairView):
@@ -514,8 +616,6 @@ class VerifySocialView(APIView):
 #         return response
 
 
-import requests
-from dj_rest_auth.views import PasswordResetView # [추가] 부모 클래스 임포트
 
 def verify_recaptcha(token):
     """Google reCAPTCHA v2 검증"""
@@ -598,7 +698,7 @@ class FindUsernameView(APIView):
         users = get_user_model().objects.filter(email=email)
         
         if not users.exists():
-            logger.info(f"아이디 찾기 요청 - 미가입 이메일")
+            logger.info("아이디 찾기 요청 - 미가입 이메일")
             return Response(
                 {"message": UNIFIED_MESSAGE},
                 status=status.HTTP_200_OK

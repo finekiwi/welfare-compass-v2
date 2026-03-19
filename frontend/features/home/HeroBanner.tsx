@@ -3,14 +3,14 @@ import Image from "next/image";
 
 export function HeroBanner() {
   return (
-    <section className="relative mb-8 overflow-hidden">
+    <section className="relative overflow-hidden">
       {/* ✅ 배경 이미지 */}
-      <div className="relative h-[220px] w-full">
+      <div className="relative h-[120px] w-full">
         <Image
           src="/hero2.png" // ✅ public/hero.png → src는 /hero.png
           alt="복지나침반 히어로 배너"
           fill
-          className="object-cover"
+          className="object-cover scale-125 object-[center_60%]"
           priority
         />
 

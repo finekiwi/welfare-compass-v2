@@ -37,8 +37,9 @@ from langchain_core.documents import Document
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from embeddings.vector_store import load_vector_db, is_policy_active
+from embeddings.vector_store import load_vector_db
 from embeddings.bm25_retriever import get_bm25_retriever
+from embeddings.retriever_utils import remove_duplicates, filter_expired
 from embeddings.config import RerankerConfig, RetrieverConfig
 from embeddings.rerankers import get_reranker
 
@@ -79,58 +80,56 @@ class SearchResult:
 
 
 # ============================================================================
-# Dense Retriever
+# Dense Retriever (캐싱)
 # ============================================================================
+_dense_retriever_cache = None
+
+
 def get_dense_retriever(k: int = DEFAULT_RETRIEVE_K):
-    """Chroma DB → LangChain retriever 변환"""
-    db = load_vector_db()
-    return db.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": k}
-    )
+    """Chroma DB → LangChain retriever 변환 (싱글톤 캐싱)
+
+    Note: 첫 호출 시 k 값으로 고정됨. 현재 호출처(ensemble_search_with_bge)가
+    항상 동일한 k로 호출하므로 문제없음. k를 동적으로 바꿔야 하면 캐시 무효화 필요.
+    """
+    global _dense_retriever_cache
+    if _dense_retriever_cache is None:
+        db = load_vector_db()
+        _dense_retriever_cache = db.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": k}
+        )
+    return _dense_retriever_cache
 
 
 # ============================================================================
-# 앙상블 리트리버
+# 앙상블 리트리버 (캐싱)
 # ============================================================================
+_ensemble_retriever_cache = None
+
+
 def create_ensemble_retriever(
     bm25_weight: float = DEFAULT_BM25_WEIGHT,
     dense_weight: float = DEFAULT_DENSE_WEIGHT,
     k: int = DEFAULT_RETRIEVE_K
 ) -> EnsembleRetriever:
-    """BM25 + Dense 앙상블 리트리버 생성"""
+    """BM25 + Dense 앙상블 리트리버 생성 (싱글톤 캐싱)
+
+    Note: 첫 호출 시 파라미터로 고정됨. 현재 호출처(ensemble_search_with_bge)가
+    항상 동일한 값으로 호출하므로 문제없음. 파라미터를 동적으로 바꿔야 하면 캐시 무효화 필요.
+    """
+    global _ensemble_retriever_cache
+    if _ensemble_retriever_cache is not None:
+        return _ensemble_retriever_cache
+
     total = bm25_weight + dense_weight
     bm25_weight = bm25_weight / total
     dense_weight = dense_weight / total
 
-    return EnsembleRetriever(
+    _ensemble_retriever_cache = EnsembleRetriever(
         retrievers=[get_bm25_retriever(k=k), get_dense_retriever(k=k)],
         weights=[bm25_weight, dense_weight]
     )
-
-
-# ============================================================================
-# 필터링
-# ============================================================================
-def remove_duplicates(documents: List[Document]) -> List[Document]:
-    """plcyNo 기준 중복 제거"""
-    seen = set()
-    unique = []
-    for doc in documents:
-        plcy_no = doc.metadata.get('plcyNo')
-        if plcy_no and plcy_no not in seen:
-            seen.add(plcy_no)
-            unique.append(doc)
-        elif not plcy_no:
-            unique.append(doc)
-    return unique
-
-
-def filter_expired(documents: List[Document], include_expired: bool = False) -> List[Document]:
-    """마감 정책 필터링"""
-    if include_expired:
-        return documents
-    return [doc for doc in documents if is_policy_active(doc.metadata.get('aplyYmd', ''))]
+    return _ensemble_retriever_cache
 
 
 # ============================================================================

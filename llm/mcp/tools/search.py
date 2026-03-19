@@ -184,7 +184,7 @@ def _get_db_connection():
         port=os.environ.get("DB_PORT", "5432"),
         dbname=os.environ.get("DB_NAME", "welfare"),
         user=os.environ.get("DB_USER", "welfare_user"),
-        password=os.environ.get("DB_PASSWORD", "welfare1234"),
+        password=os.environ.get("DB_PASSWORD", ""),
     )
 
 

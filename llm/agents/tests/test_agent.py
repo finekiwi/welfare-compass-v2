@@ -21,6 +21,21 @@ needs_api_key = pytest.mark.skipif(
 )
 
 
+def _is_backend_unavailable_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    keywords = (
+        "connection error",
+        "failed to establish",
+        "api connection",
+        "apiconnectionerror",
+        "read timeout",
+        "timed out",
+        "nodename nor servname",
+        "temporary failure in name resolution",
+    )
+    return any(keyword in text for keyword in keywords)
+
+
 # ============================================================================
 # 1. Agent 생성 테스트
 # ============================================================================
@@ -65,7 +80,7 @@ class TestAgentCreation:
             captured["policy_fetcher"] = policy_fetcher
             return []
 
-        def fake_chat_openai(*, model, temperature):
+        def fake_chat_openai(*, model, temperature, **kwargs):
             return {"model": model, "temperature": temperature}
 
         class DummyAgent:
@@ -91,6 +106,7 @@ class TestAgentCreation:
     def test_run_agent_sets_recursion_limit(self):
         """run_agent가 max_iterations 기반 recursion_limit을 설정한다."""
         from llm.agents.agent import run_agent
+        from llm.agents.schemas import ChatResponse
 
         class DummyMessage:
             type = "ai"
@@ -111,7 +127,9 @@ class TestAgentCreation:
         result = run_agent(agent, "테스트")
 
         assert result["error"] is None
-        assert result["response"] == "ok"
+        assert isinstance(result["response"], ChatResponse)
+        assert result["response"].message == "ok"
+        assert result["raw_text"] == "ok"
         assert agent.last_config["recursion_limit"] == 11
 
     def test_create_agent_with_mcp_syncs_policy_fetcher_and_max_iterations(self, monkeypatch):
@@ -145,7 +163,7 @@ class TestAgentCreation:
             captured["policy_fetcher"] = policy_fetcher
             return [DummyTool("extract_info"), DummyTool("search_policies"), DummyTool("check_eligibility")]
 
-        def fake_chat_openai(*, model, temperature):
+        def fake_chat_openai(*, model, temperature, **kwargs):
             captured["temperature"] = temperature
             return object()
 
@@ -187,6 +205,12 @@ class TestAgentResponse:
         """테스트용 Agent 생성"""
         from llm.agents.agent import create_agent
         return create_agent(use_short_prompt=True)
+
+    @staticmethod
+    def _assert_or_skip(result: dict):
+        if result.get("error") and _is_backend_unavailable_error(Exception(result["error"])):
+            pytest.skip(f"integration unavailable: {result['error']}")
+        assert result["error"] is None
     
     def test_chitchat_response(self, agent):
         """chitchat: 인사에 응답"""
@@ -196,14 +220,14 @@ class TestAgentResponse:
         
         # 응답 있음
         assert result["response"] is not None
-        assert len(result["response"]) > 0
+        assert len(result["response"].message) > 0
         
         # 에러 없음
-        assert result["error"] is None
+        self._assert_or_skip(result)
         
         # chitchat은 도구 호출 없음 (또는 최소)
         # (모델이 도구 호출할 수도 있어서 강제 assert 안 함)
-        print(f"\n응답: {result['response']}")
+        print(f"\n응답: {result['response'].message}")
         print(f"도구 호출: {result['tool_calls']}")
     
     def test_matching_response(self, agent):
@@ -218,13 +242,13 @@ class TestAgentResponse:
         
         # 응답 있음
         assert result["response"] is not None
-        assert len(result["response"]) > 0
+        assert len(result["response"].message) > 0
         
         # 에러 없음
-        assert result["error"] is None
+        self._assert_or_skip(result)
         
         # 도구 호출 있음 (stub이라도 호출되어야 함)
-        print(f"\n응답: {result['response']}")
+        print(f"\n응답: {result['response'].message}")
         print(f"도구 호출: {result['tool_calls']}")
     
     def test_faq_response(self, agent):
@@ -238,9 +262,9 @@ class TestAgentResponse:
         )
         
         assert result["response"] is not None
-        assert result["error"] is None
+        self._assert_or_skip(result)
         
-        print(f"\n응답: {result['response']}")
+        print(f"\n응답: {result['response'].message}")
         print(f"도구 호출: {result['tool_calls']}")
     
     def test_explore_response(self, agent):
@@ -254,9 +278,9 @@ class TestAgentResponse:
         )
         
         assert result["response"] is not None
-        assert result["error"] is None
+        self._assert_or_skip(result)
         
-        print(f"\n응답: {result['response']}")
+        print(f"\n응답: {result['response'].message}")
         print(f"도구 호출: {result['tool_calls']}")
 
 
@@ -276,6 +300,7 @@ class TestAgentErrorHandling:
         
         # 에러 또는 빈 응답이라도 크래시 안 남
         assert "response" in result
+        assert hasattr(result["response"], "message")
     
     def test_very_long_message(self):
         """매우 긴 메시지 처리"""
@@ -288,6 +313,105 @@ class TestAgentErrorHandling:
         
         # 크래시 없이 응답
         assert "response" in result
+        assert hasattr(result["response"], "message")
+
+
+class TestRunAgentParsing:
+    """structured output 파싱 테스트"""
+
+    @staticmethod
+    def _agent_with_response(content: str):
+        class DummyMessage:
+            type = "ai"
+            tool_calls = []
+
+            def __init__(self, content: str):
+                self.content = content
+
+        class DummyAgent:
+            def invoke(self, _inputs, config=None):
+                return {"messages": [DummyMessage(content)]}
+
+        return DummyAgent()
+
+    def test_run_agent_parses_json_response(self):
+        from llm.agents.agent import run_agent
+        from llm.agents.schemas import EligibilityStatus
+
+        agent = self._agent_with_response(
+            json.dumps(
+                {
+                    "message": "조건에 맞는 정책을 정리했어요.",
+                    "policies": [
+                        {
+                            "plcy_no": "P100",
+                            "plcy_nm": "청년월세지원",
+                            "category": "주거",
+                            "summary": "월세를 지원해요.",
+                            "eligibility": "eligible",
+                            "ineligible_reasons": [],
+                            "deadline": "2026-03-20",
+                            "apply_url": "https://example.com/apply",
+                            "detail_url": "https://example.com/detail",
+                        }
+                    ],
+                    "follow_up": None,
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        result = run_agent(agent, "주거 정책 알려줘")
+
+        assert result["error"] is None
+        assert result["response"].message == "조건에 맞는 정책을 정리했어요."
+        assert result["response"].policies[0].eligibility is EligibilityStatus.ELIGIBLE
+        assert result["raw_text"].startswith("{")
+
+    def test_run_agent_parses_fenced_json_response(self):
+        from llm.agents.agent import run_agent
+
+        agent = self._agent_with_response(
+            """```json
+{"message":"안내해드릴게요.","policies":[],"follow_up":"나이를 알려주세요."}
+```"""
+        )
+
+        result = run_agent(agent, "추천해줘")
+
+        assert result["response"].message == "안내해드릴게요."
+        assert result["response"].follow_up == "나이를 알려주세요."
+        assert result["response"].policies == []
+
+    def test_run_agent_falls_back_for_plain_text(self):
+        from llm.agents.agent import run_agent
+
+        agent = self._agent_with_response("안녕하세요! 무엇을 도와드릴까요?")
+        result = run_agent(agent, "안녕!")
+
+        assert result["response"].message == "안녕하세요! 무엇을 도와드릴까요?"
+        assert result["response"].policies == []
+        assert result["response"].follow_up is None
+
+    def test_run_agent_keeps_empty_policies(self):
+        from llm.agents.agent import run_agent
+
+        agent = self._agent_with_response(
+            '{"message":"반가워요!","policies":[],"follow_up":null}'
+        )
+        result = run_agent(agent, "안녕!")
+
+        assert result["response"].policies == []
+
+    def test_run_agent_verbose_logs_parse_result(self, capsys):
+        from llm.agents.agent import run_agent
+
+        agent = self._agent_with_response('{"message":"안내해드릴게요.","policies":[],"follow_up":null}')
+        run_agent(agent, "테스트", verbose=True)
+        captured = capsys.readouterr()
+
+        assert "Structured Output Parse" in captured.out
+        assert "success" in captured.out
 
 
 # ============================================================================
@@ -338,7 +462,7 @@ class TestTools:
         search_module = importlib.import_module("llm.agents.tools.search_policies")
 
         class DummyBackend:
-            def search(self, query: str, top_k: int = 10):
+            def search(self, query: str, top_k: int = 10, income_max: int | None = None):
                 return {
                     "original_query": query,
                     "rewritten_query": "청년 월세 지원",

@@ -54,7 +54,7 @@ export function MyPageShell({ children }: { children: React.ReactNode }) {
                             <SideItem href="/mypage" label="마이페이지 홈" />
                             <SideItem href="/mypage/scraps" label="관심 정책" />
                             <SideItem href="/mypage/profile" label="내게 맞는 정책" />
-                            <SideItem href="/mypage/secure" label="나의정보관리" />
+                            <SideItem href="/mypage/verify" label="나의정보관리" />
                         </div>
 
                         <div className="mt-3 border-t pt-3">

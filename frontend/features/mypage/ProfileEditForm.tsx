@@ -4,14 +4,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { getMyProfile, saveMyProfile } from "./mypage.api";
+import { getMyProfile, saveProfilePreferences } from "./mypage.api";
 import { useProfileStore } from "@/stores/profile.store";
 import type {
     MyProfile,
     JobStatus,
     EducationStatus,
     MarriageStatus,
-    IncomeLevel,
     HousingType,
     SpecialCondition,
     NeedCategory,
@@ -24,50 +23,46 @@ import { SEOUL_DISTRICTS } from "./mypage.types";
 
 const JOB_OPTIONS: Array<{ v: JobStatus; label: string }> = [
     { v: "employed", label: "재직중" },
+    { v: "self_employed", label: "자영업자" },
     { v: "unemployed", label: "미취업" },
     { v: "job_seeking", label: "구직중" },
     { v: "student", label: "학생" },
     { v: "startup", label: "창업준비" },
     { v: "freelancer", label: "프리랜서" },
-    { v: "other", label: "기타" },
 ];
 
 const EDUCATION_OPTIONS: Array<{ v: EducationStatus; label: string }> = [
-    { v: "enrolled", label: "재학" },
-    { v: "on_leave", label: "휴학" },
-    { v: "graduated", label: "졸업" },
-    { v: "dropout", label: "중퇴" },
-    { v: "other", label: "기타" },
+    { v: "below_high_school", label: "고졸 미만" },
+    { v: "high_school_enrolled", label: "고교 재학" },
+    { v: "high_school", label: "고졸" },
+    { v: "university_enrolled", label: "대학 재학" },
+    { v: "university_leave", label: "대학 휴학" },
+    { v: "university", label: "대졸" },
+    { v: "graduate_school", label: "석박사" },
 ];
 
 const MARRIAGE_OPTIONS: Array<{ v: MarriageStatus; label: string }> = [
     { v: "single", label: "미혼" },
     { v: "married", label: "기혼" },
-    { v: "other", label: "기타" },
 ];
 
-const INCOME_LEVEL_OPTIONS: Array<{ v: IncomeLevel; label: string }> = [
-    { v: "below_50", label: "기준중위소득 50% 이하" },
-    { v: "below_100", label: "기준중위소득 100% 이하" },
-    { v: "above_100", label: "기준중위소득 100% 초과" },
-    { v: "unknown", label: "모름" },
-];
 
 const HOUSING_OPTIONS: Array<{ v: HousingType; label: string }> = [
     { v: "jeonse", label: "전세" },
     { v: "monthly", label: "월세" },
     { v: "owned", label: "자가" },
-    { v: "gosiwon", label: "고시원" },
-    { v: "parents", label: "부모님집" },
-    { v: "public", label: "공공임대" },
-    { v: "other", label: "기타" },
 ];
 
 const SPECIAL_CONDITION_OPTIONS: Array<{ v: SpecialCondition; label: string }> = [
     { v: "신혼", label: "신혼부부" },
     { v: "한부모", label: "한부모가정" },
-    { v: "장애인", label: "장애인" },
-    { v: "기초수급자", label: "기초수급자" },
+    { v: "장애", label: "장애인" },
+    { v: "다자녀", label: "다자녀" },
+    { v: "저소득", label: "저소득" },
+    { v: "차상위", label: "차상위" },
+    { v: "기초수급", label: "기초수급자" },
+    { v: "중소기업", label: "중소기업" },
+    { v: "군인", label: "군인" },
 ];
 
 const NEED_OPTIONS: Array<{ v: NeedCategory; label: string }> = [
@@ -200,16 +195,49 @@ export function ProfileEditForm() {
         });
     }
 
+    function buildClearedProfile(current: MyProfile): MyProfile {
+        return {
+            ...current,
+            birthYear: null,
+            district: "",
+            incomeLevel: "",
+            incomeAmount: null,
+            jobStatus: "",
+            educationStatus: "",
+            marriageStatus: "",
+            housingType: "",
+            householdSize: null,
+            hasChildren: false,
+            childrenAges: [],
+            specialConditions: [],
+            needs: [],
+            interestIds: [],
+        };
+    }
+
     async function onReset() {
-        if (!origin) return;
-        setForm(origin);
+        if (!form) return;
+        const confirmed = window.confirm("퍼스널 정보를 초기화하겠습니까?");
+        if (!confirmed) return;
+
+        setSaving(true);
+        try {
+            const cleared = buildClearedProfile(form);
+            await saveProfilePreferences(cleared);
+            const latest = await getMyProfile();
+            setOrigin(latest);
+            setForm(latest);
+            await updateProfile(latest);
+        } finally {
+            setSaving(false);
+        }
     }
 
     async function onSave() {
         if (!form) return;
         setSaving(true);
         try {
-            await saveMyProfile(form);
+            await saveProfilePreferences(form);
             const latest = await getMyProfile();
             setOrigin(latest);
             setForm(latest);
@@ -232,15 +260,15 @@ export function ProfileEditForm() {
                 <div className="flex items-center gap-4">
                     <div className="grid h-14 w-14 place-items-center rounded-full bg-white/15">
                         <Image
-                            src={form.avatarUrl || "/images/beluga.png"}
+                            src={form.avatarUrl || "/mascot/profile-default.png"}
                             alt="avatar"
-                            width={40}
-                            height={40}
+                            width={45}
+                            height={45}
                             className="object-contain"
                         />
                     </div>
                     <div>
-                        <div className="text-lg font-bold">{form.displayName}의 퍼스널 정보</div>
+                        <div className="text-lg font-bold">{form.displayName}님의 퍼스널 정보</div>
                         <div className="mt-1 text-sm text-white/80">
                             설정하신 개인정보 및 관심분야를 기반으로 맞춤 정책을 제공합니다.
                         </div>
@@ -359,18 +387,8 @@ export function ProfileEditForm() {
                 </Card>
 
                 <Card title="소득 수준">
-                    <select
-                        value={form.incomeLevel}
-                        onChange={(e) => setForm({ ...form, incomeLevel: e.target.value as IncomeLevel })}
-                        className="h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-gray-900"
-                    >
-                        <option value="">선택하세요</option>
-                        {INCOME_LEVEL_OPTIONS.map((o) => (
-                            <option key={o.v} value={o.v}>{o.label}</option>
-                        ))}
-                    </select>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
-                        <span>월 소득</span>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <span>연 소득</span>
                         <input
                             type="number"
                             value={form.incomeAmount ?? ""}
@@ -482,52 +500,6 @@ export function ProfileEditForm() {
                         ))}
                     </div>
                 </Card>
-            </div>
-
-            {/* 이메일 알림 설정 */}
-            <div className="rounded-2xl bg-blue-50 p-6">
-                <h2 className="text-lg font-bold text-[#0b2f6d] mb-4">📬 정책 알림 설정</h2>
-                <div className="space-y-4">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={form.emailNotificationEnabled ?? false}
-                            onChange={(e) =>
-                                setForm({
-                                    ...form,
-                                    emailNotificationEnabled: e.target.checked,
-                                })
-                            }
-                            className="mt-1 h-5 w-5 rounded border-gray-300"
-                        />
-                        <div>
-                            <span className="font-semibold">정책정보 알림 수신 동의</span>
-                            <p className="text-sm text-gray-600 mt-1">
-                                새로운 정책이 등록되면 회원님의 프로필과 매칭되는 정책을 이메일로 알려드립니다.
-                            </p>
-                        </div>
-                    </label>
-
-                    {form.emailNotificationEnabled && (
-                        <div className="ml-8">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                알림 받을 이메일 주소
-                            </label>
-                            <input
-                                type="email"
-                                value={form.notificationEmail ?? ""}
-                                onChange={(e) =>
-                                    setForm({
-                                        ...form,
-                                        notificationEmail: e.target.value || null,
-                                    })
-                                }
-                                placeholder="example@email.com"
-                                className="h-11 w-full max-w-md rounded-lg border px-3 text-sm outline-none focus:border-blue-800"
-                            />
-                        </div>
-                    )}
-                </div>
             </div>
 
             <div className="flex justify-end">
