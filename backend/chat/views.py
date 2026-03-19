@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import ChatMessage, ChatSession
-from llm.agents.agent import clear_user_info
+from llm.agents.user_session import clear_user_info
 from .serializers import (
     ChatMessageSerializer,
     ChatSessionDetailSerializer,
