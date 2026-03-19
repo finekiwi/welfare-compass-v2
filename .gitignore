@@ -1,4 +1,5 @@
 refs/
+.claude/
 
 # macOS
 .DS_Store
@@ -11,3 +12,23 @@ refs/
 backend/.env
 frontend/.env.local
 .env.langfuse
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# 데이터 파일 (ETL로 재생성)
+data/raw/*.json
+data/chroma_db/
+data/processed/
+
+# Node
+node_modules/
+.next/
+out/
+
+# 기타 잡파일
+gitignore
